@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://problem-frame-gate.local/schemas/horizon.schema.json",
+  "title": "Problem Frame Gate Strict Manifest",
+  "type": "object",
+  "required": [
+    "strict",
+    "capacities",
+    "writer_authority",
+    "version_intervals",
+    "protected_constructors",
+    "gate_bundle_kinds",
+    "executor_writer",
+    "clock_policy",
+    "certificate_families",
+    "risk_modes"
+  ],
+  "properties": {
+    "strict": {"const": true},
+    "capacities": {"type": "object"},
+    "writer_authority": {"type": "object"},
+    "version_intervals": {"type": "object"},
+    "protected_constructors": {"type": "object"},
+    "gate_bundle_kinds": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "GateCheck"},
+        {"const": "OutboxClaim"},
+        {"const": "UseCap"},
+        {"const": "ConsumeResource"},
+        {"const": "RiskClose"}
+      ],
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "executor_writer": {"type": "string"},
+    "clock_policy": {"type": "string"},
+    "certificate_families": {"type": "object"},
+    "risk_modes": {"type": "array", "items": {"type": "string"}}
+  }
+}

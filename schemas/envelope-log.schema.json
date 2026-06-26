@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://problem-frame-gate.local/schemas/envelope-log.schema.json",
+  "title": "Problem Frame Gate Envelope Log",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["eid", "event", "commit", "writer", "version", "class", "payload"],
+    "properties": {
+      "eid": {"type": "string"},
+      "event": {"type": "string"},
+      "slot": {"type": "string"},
+      "commit": {"type": "integer"},
+      "writer": {"type": "string"},
+      "owner": {"type": "string"},
+      "version": {"type": "integer"},
+      "class": {"enum": ["normal", "abort", "failClosed"]},
+      "payload": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {"kind": {"type": "string"}}
+      },
+      "dependencies": {"type": "array"},
+      "commit_group": {"type": "string"}
+    }
+  }
+}

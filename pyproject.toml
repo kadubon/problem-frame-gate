@@ -1,0 +1,104 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "problem-frame-gate"
+version = "0.3.0"
+description = "Audit logs and action gates for safer AI agents."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "Problem Frame Gate contributors" }]
+keywords = [
+  "ai",
+  "ai-agents",
+  "audit-log",
+  "authorization",
+  "security",
+  "python",
+  "pypi",
+  "risk-management",
+  "provenance",
+  "open-source",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "bandit>=1.8.6",
+  "build>=1.2.2",
+  "mypy>=1.16.0",
+  "pip-audit>=2.9.0",
+  "pytest>=8.4.0",
+  "pytest-cov>=6.2.0",
+  "ruff>=0.12.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kadubon/problem-frame-gate"
+Documentation = "https://github.com/kadubon/problem-frame-gate/tree/main/docs"
+Issues = "https://github.com/kadubon/problem-frame-gate/issues"
+Source = "https://github.com/kadubon/problem-frame-gate"
+
+[project.scripts]
+pfg = "problem_frame_gate.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/problem_frame_gate"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/problem_frame_gate",
+  "schemas",
+  "tests",
+  "docs",
+  "examples",
+  "README.md",
+  "LICENSE",
+  "NOTICE",
+  "SECURITY.md",
+  "CITATION.cff",
+  "pyproject.toml",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S", "C4", "SIM", "RUF"]
+ignore = [
+  "S101",
+  "S106",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+packages = ["problem_frame_gate"]
+
+[tool.pytest.ini_options]
+addopts = "--cov=problem_frame_gate --cov-report=term-missing --cov-report=xml --cov-fail-under=90"
+testpaths = ["tests"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
