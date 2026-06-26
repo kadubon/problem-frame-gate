@@ -24,4 +24,6 @@ uv run mypy
 uv run pytest
 uv run bandit -c pyproject.toml -r src
 uv run pip-audit
+uv build
+uv run python scripts/generate_sbom.py --output sbom.json
 ```

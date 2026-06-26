@@ -5,23 +5,27 @@
   "type": "array",
   "items": {
     "type": "object",
-    "required": ["eid", "event", "commit", "writer", "version", "class", "payload"],
+    "required": ["eid", "event", "slot", "commit", "writer", "owner", "version", "class", "payload"],
     "properties": {
       "eid": {"type": "string"},
       "event": {"type": "string"},
       "slot": {"type": "string"},
       "commit": {"type": "integer"},
+      "commit_time": {"type": "integer"},
       "writer": {"type": "string"},
       "owner": {"type": "string"},
-      "version": {"type": "integer"},
+      "version": {"type": "integer", "minimum": 1},
       "class": {"enum": ["normal", "abort", "failClosed"]},
+      "envelope_class": {"enum": ["normal", "abort", "failClosed"]},
       "payload": {
         "type": "object",
         "required": ["kind"],
-        "properties": {"kind": {"type": "string"}}
+        "properties": {"kind": {"type": "string", "minLength": 1}},
+        "additionalProperties": true
       },
       "dependencies": {"type": "array"},
       "commit_group": {"type": "string"}
-    }
+    },
+    "additionalProperties": false
   }
 }

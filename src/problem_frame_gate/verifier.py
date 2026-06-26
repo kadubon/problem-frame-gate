@@ -5,11 +5,16 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from itertools import pairwise
+from typing import TYPE_CHECKING
 
 from .digest import digest_json
 from .model import DEFAULT_GATE_BUNDLE_KINDS, DependencyRef, Envelope, EnvelopeClass, Horizon, OrderEdge
 from .result import CheckBuilder, CheckResult
 from .security import scan_for_sensitive_data
+
+if TYPE_CHECKING:
+    from .certificates import CertificateFamily
+    from .risk import RiskMode
 
 
 def digest_log(envelopes: Iterable[Envelope]) -> str:
@@ -22,6 +27,15 @@ class EnvelopeVerifier:
     """Checker for the finite `LegalLog` conditions used by this package."""
 
     footprint = frozenset({"EnvelopeVerifier", "ClockWatermark"})
+
+    def __init__(
+        self,
+        *,
+        certificate_registry: Mapping[str, CertificateFamily] | None = None,
+        risk_registry: Mapping[str, RiskMode] | None = None,
+    ) -> None:
+        self.certificate_registry = certificate_registry
+        self.risk_registry = risk_registry
 
     def verify(self, horizon: Horizon, envelopes: Sequence[Envelope]) -> CheckResult:
         builder = CheckBuilder(footprint=set(self.footprint))
@@ -464,6 +478,22 @@ class EnvelopeVerifier:
         if not isinstance(request, Mapping):
             builder.error("gate-bundle-request", "GateCheck row must bind the gate request", location=gate.eid)
             return
+        gate_record = gate.payload.get("gate_record")
+        if not isinstance(gate_record, Mapping):
+            builder.error(
+                "gate-record-missing",
+                "GateCheck row must bind a first-class gate record",
+                location=gate.eid,
+            )
+            return
+        source_cut = gate.payload.get("source_cut")
+        if not isinstance(source_cut, Mapping):
+            builder.error(
+                "gate-source-cut-missing",
+                "GateCheck row must bind a first-class source cut",
+                location=gate.eid,
+            )
+            return
 
         expected_fields = {
             "gate_id": gate.payload.get("gate_id"),
@@ -478,6 +508,8 @@ class EnvelopeVerifier:
             "ledger_digest": request.get("ledger_digest"),
             "source_digest": gate.payload.get("source_digest"),
         }
+        self._check_gate_source_cut(group, source_cut, request, envelopes, builder)
+        self._check_gate_record(gate, gate_record, request, source_cut, builder)
         if expected_fields["bundle_id"] != group:
             builder.error("gate-bundle-id", "GateCheck bundle id must match commit group", location=gate.eid)
         if expected_fields["gate_id"] != request.get("gate_id"):
@@ -530,6 +562,8 @@ class EnvelopeVerifier:
                         },
                     )
 
+        self._check_gate_semantics(horizon, group, gate, request, envelopes, builder)
+
         if (
             close.commit_time < claim.commit_time
             or close.commit_time < use.commit_time
@@ -541,9 +575,204 @@ class EnvelopeVerifier:
                 location=close.eid,
             )
 
+    def _check_gate_source_cut(
+        self,
+        group: str,
+        source_cut: Mapping[str, object],
+        request: Mapping[str, object],
+        envelopes: Sequence[Envelope],
+        builder: CheckBuilder,
+    ) -> None:
+        source_time = request.get("source_time")
+        if not isinstance(source_time, int):
+            builder.error("gate-source-cut", "gate request source_time must be an integer", location=group)
+            return
+        source_universe = tuple(env for env in envelopes if env.commit_group != group)
+        expected_included = tuple(sorted(env.eid for env in source_universe if env.commit_time <= source_time))
+        expected_frontier = tuple(sorted(env.eid for env in source_universe if env.commit_time > source_time))
+        actual_included = _string_tuple(source_cut.get("included_eids"))
+        actual_frontier = _string_tuple(source_cut.get("excluded_frontier_eids"))
+        if tuple(sorted(actual_included)) != expected_included:
+            builder.error(
+                "gate-source-cut-included",
+                "GateCheck source cut included set does not match the finite source prefix",
+                location=group,
+                details={"expected": list(expected_included), "actual": sorted(actual_included)},
+            )
+        if tuple(sorted(actual_frontier)) != expected_frontier:
+            builder.error(
+                "gate-source-cut-frontier",
+                "GateCheck source cut frontier does not match rows after the source time",
+                location=group,
+                details={"expected": list(expected_frontier), "actual": sorted(actual_frontier)},
+            )
+        by_id = {env.eid: env for env in source_universe}
+        included_rows = tuple(by_id[eid] for eid in actual_included if eid in by_id)
+        actual_digest = source_cut.get("digest")
+        expected_digest = digest_log(included_rows)
+        request_digest = request.get("expected_source_digest")
+        if actual_digest != expected_digest or (request_digest is not None and actual_digest != request_digest):
+            builder.error(
+                "gate-source-cut-digest",
+                "GateCheck source cut digest does not match its included rows",
+                location=group,
+                details={"expected": expected_digest, "actual": actual_digest},
+            )
+        clock_rows = _string_tuple(source_cut.get("clock_rows"))
+        watermark_rows = _string_tuple(source_cut.get("watermark_rows"))
+        if f"source_time:{source_time}" not in clock_rows:
+            builder.error(
+                "gate-source-cut-clock",
+                "GateCheck source cut must bind the source_time clock row",
+                location=group,
+            )
+        if f"source_digest:{expected_digest}" not in watermark_rows:
+            builder.error(
+                "gate-source-cut-watermark",
+                "GateCheck source cut must bind the source digest watermark row",
+                location=group,
+            )
+        included_ids = set(actual_included)
+        for env in included_rows:
+            for dep in env.dependencies:
+                if dep.eid is not None and dep.eid not in included_ids:
+                    builder.error(
+                        "gate-source-cut-dependency",
+                        "GateCheck source cut is not closed under dependencies",
+                        location=env.eid,
+                        details=dep.to_json(),
+                    )
+            if env.commit_group:
+                group_ids = {row.eid for row in source_universe if row.commit_group == env.commit_group}
+                if not group_ids.issubset(included_ids):
+                    builder.error(
+                        "gate-source-cut-commit-group",
+                        "GateCheck source cut is not closed under source commit groups",
+                        location=env.commit_group,
+                    )
 
-def legal_log(horizon: Horizon, envelopes: Sequence[Envelope]) -> CheckResult:
-    return EnvelopeVerifier().verify(horizon, envelopes)
+    def _check_gate_record(
+        self,
+        gate: Envelope,
+        gate_record: Mapping[str, object],
+        request: Mapping[str, object],
+        source_cut: Mapping[str, object],
+        builder: CheckBuilder,
+    ) -> None:
+        fields = (
+            "gate_id",
+            "bundle_id",
+            "frame_id",
+            "action",
+            "outbox_id",
+            "capability_id",
+            "lease_id",
+            "risk_id",
+            "hypothesis_id",
+            "risk_mode",
+            "risk_cert_id",
+            "source_time",
+            "commit_time",
+            "ledger_digest",
+        )
+        for field in fields:
+            if gate_record.get(field) != request.get(field):
+                builder.error(
+                    "gate-record-coherence",
+                    "gate record field does not match the bound request",
+                    location=gate.eid,
+                    details={"field": field, "expected": request.get(field), "actual": gate_record.get(field)},
+                )
+        if gate_record.get("source_digest") != gate.payload.get("source_digest"):
+            builder.error(
+                "gate-record-source-digest",
+                "gate record source digest must match the GateCheck row",
+                location=gate.eid,
+            )
+        if gate_record.get("source_digest") != source_cut.get("digest"):
+            builder.error(
+                "gate-record-source-cut",
+                "gate record source digest must match the source cut digest",
+                location=gate.eid,
+            )
+        transcript_digest = gate.payload.get("transcript_digest")
+        if gate_record.get("transcript_digest") != transcript_digest or not _sha256_text(transcript_digest):
+            builder.error(
+                "gate-record-transcript",
+                "gate record must bind the GateCheck transcript digest",
+                location=gate.eid,
+            )
+        expected_record_digest = digest_json(dict(gate_record))
+        if gate.payload.get("gate_record_digest") != expected_record_digest:
+            builder.error(
+                "gate-record-digest",
+                "GateCheck gate_record_digest does not match the embedded gate record",
+                location=gate.eid,
+                details={"expected": expected_record_digest, "actual": gate.payload.get("gate_record_digest")},
+            )
+
+    def _check_gate_semantics(
+        self,
+        horizon: Horizon,
+        group: str,
+        gate: Envelope,
+        request: Mapping[str, object],
+        envelopes: Sequence[Envelope],
+        builder: CheckBuilder,
+    ) -> None:
+        from .gate import ExecutorGate, GateRequest
+
+        try:
+            request_obj = GateRequest.from_mapping(request)
+        except (KeyError, TypeError, ValueError) as exc:
+            builder.error(
+                "gate-semantic-request",
+                f"GateCheck request cannot be parsed for semantic replay: {exc}",
+                location=gate.eid,
+            )
+            return
+        source_universe = tuple(env for env in envelopes if env.commit_group != group)
+        semantic = ExecutorGate(
+            certificate_registry=self.certificate_registry,
+            risk_registry=self.risk_registry,
+        ).check(horizon, source_universe, request_obj)
+        for issue in semantic.issues:
+            if issue.severity == "error":
+                builder.error(
+                    f"gate-semantic-{issue.code}",
+                    issue.message,
+                    location=issue.location or gate.eid,
+                    details=issue.details,
+                )
+            else:
+                builder.warning(
+                    f"gate-semantic-{issue.code}",
+                    issue.message,
+                    location=issue.location or gate.eid,
+                    details=issue.details,
+                )
+        expected_transcript = digest_json(semantic.to_json())
+        actual_transcript = gate.payload.get("transcript_digest")
+        if actual_transcript != expected_transcript:
+            builder.error(
+                "gate-semantic-transcript",
+                "GateCheck transcript digest does not match semantic gate replay",
+                location=gate.eid,
+                details={"expected": expected_transcript, "actual": actual_transcript},
+            )
+
+
+def legal_log(
+    horizon: Horizon,
+    envelopes: Sequence[Envelope],
+    *,
+    certificate_registry: Mapping[str, CertificateFamily] | None = None,
+    risk_registry: Mapping[str, RiskMode] | None = None,
+) -> CheckResult:
+    return EnvelopeVerifier(certificate_registry=certificate_registry, risk_registry=risk_registry).verify(
+        horizon,
+        envelopes,
+    )
 
 
 def canonical_order(horizon: Horizon, envelopes: Sequence[Envelope]) -> tuple[Envelope, ...]:
@@ -592,3 +821,13 @@ def _slot_rank(slot: str) -> tuple[int, str]:
         return (int(slot), slot)
     except ValueError:
         return (10_000, slot)
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list | tuple):
+        return ()
+    return tuple(str(item) for item in value if isinstance(item, str))
+
+
+def _sha256_text(value: object) -> bool:
+    return isinstance(value, str) and value.startswith("sha256:") and len(value) > len("sha256:")

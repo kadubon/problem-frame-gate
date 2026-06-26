@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://problem-frame-gate.local/schemas/reachability.schema.json",
+  "title": "Problem Frame Gate Reachability Transcript",
+  "type": "object",
+  "required": ["transitions", "assumptions"],
+  "properties": {
+    "transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "source_digest",
+          "target_digest",
+          "kind",
+          "transcript_digest",
+          "witness_kind",
+          "witness_digest",
+          "capacity_class",
+          "witness"
+        ],
+        "properties": {
+          "source_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "target_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "kind": {"enum": ["patch", "join", "gate", "abort", "failClosed"]},
+          "transcript_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "witness_kind": {"type": "string", "minLength": 1},
+          "witness_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "capacity_class": {"enum": ["normal", "abort", "failClosed"]},
+          "witness": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "assumptions": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

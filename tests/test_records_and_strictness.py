@@ -14,11 +14,14 @@ from problem_frame_gate import (
     ReachabilityTranscript,
     ReadFootprint,
     ReplayCertificate,
+    RiskClaimRecord,
+    RiskRouteWitness,
     SourceCut,
     SwapCover,
     TouchMatrix,
     TransitionRecord,
     WriteClass,
+    WriteCover,
     check_reachability,
     check_replay_certificate,
     check_source_cut,
@@ -49,6 +52,20 @@ def horizon() -> Horizon:
     return Horizon.strict_default(agent_writers=("agent",), normal_capacity=100)
 
 
+def cert_check(
+    *, dependencies: tuple[str, ...] = (), source_ids: tuple[str, ...] = (), checked_at: int = 2
+) -> dict[str, object]:
+    return {
+        "accepted": True,
+        "checker": "unit-certificate-family-v1",
+        "transcript_digest": digest_json({"checker": "unit-certificate-family-v1", "accepted": True}),
+        "dependency_digest": digest_json({"dependencies": sorted(dependencies), "source_ids": sorted(source_ids)}),
+        "revocation_frontier": [],
+        "checked_at": checked_at,
+        "assumption": "CertificateFamilyChecker",
+    }
+
+
 def base_log() -> list[Envelope]:
     return [
         env(
@@ -72,7 +89,7 @@ def base_log() -> list[Envelope]:
             family="risk",
             issuer="agent",
             expires_at=99,
-            family_check=True,
+            family_check=cert_check(dependencies=("e1",), source_ids=("u1",)),
             source_ids=["u1"],
             dependencies=["e1"],
             assumption="StatisticalModel",
@@ -98,6 +115,22 @@ def base_log() -> list[Envelope]:
 
 
 def gate_request() -> GateRequest:
+    risk_claim = RiskClaimRecord(
+        claim_id="q1",
+        risk_id="r1",
+        hypothesis_id="h1",
+        mode="fixed",
+        cert_id="c-risk",
+        eta="1/100",
+        event_id="F1",
+        standardized_event_id="F1",
+        route_witness=RiskRouteWitness(
+            accepted=True,
+            checker="unit-risk-route-v1",
+            transcript_digest=digest_json({"checker": "unit-risk-route-v1", "mode": "fixed"}),
+            route="fixed",
+        ),
+    )
     return GateRequest(
         gate_id="gate1",
         bundle_id="bundle1",
@@ -112,6 +145,8 @@ def gate_request() -> GateRequest:
         risk_cert_id="c-risk",
         source_time=9,
         commit_time=10,
+        risk_claim=risk_claim.to_json(),
+        risk_alpha="1/50",
     )
 
 
@@ -165,17 +200,72 @@ def test_source_cut_checks_frontier_and_digest() -> None:
     log = tuple(base_log())
     included = tuple(env.eid for env in log if env.commit_time <= 5)
     frontier = tuple(env.eid for env in log if env.commit_time > 5)
-    cut = SourceCut("cut1", 5, included, frontier, digest_log(tuple(env for env in log if env.commit_time <= 5)))
+    cut_digest = digest_log(tuple(env for env in log if env.commit_time <= 5))
+    cut = SourceCut(
+        "cut1",
+        5,
+        included,
+        frontier,
+        cut_digest,
+        clock_rows=("source_time:5",),
+        watermark_rows=(f"source_digest:{cut_digest}",),
+    )
     assert check_source_cut(horizon(), log, cut).ok
     bad = SourceCut("cut1", 5, included[:-1], frontier, cut.digest)
     assert not check_source_cut(horizon(), log, bad).ok
 
 
 def test_reachability_chain_checks_digest_links() -> None:
+    abort_row = Envelope(
+        "abort1",
+        "abort1",
+        "0",
+        1,
+        "agent",
+        "agent",
+        1,
+        EnvelopeClass.ABORT,
+        {"kind": "Abort", "frame_id": "p1"},
+    )
+    abort_witness = {"source": [], "rows": [abort_row.to_json()]}
+    abort_target = digest_log((abort_row,))
+    abort_result = CheckResult.success(footprint={"ReachTranscript"}, digest=abort_target)
+    fail_row = Envelope(
+        "fail1",
+        "fail1",
+        "0",
+        2,
+        "agent",
+        "agent",
+        1,
+        EnvelopeClass.FAIL_CLOSED,
+        {"kind": "FailClosed", "frame_id": "p1"},
+    )
+    fail_witness = {"source": [abort_row.to_json()], "rows": [fail_row.to_json()]}
+    fail_target = digest_log((abort_row, fail_row))
+    fail_result = CheckResult.success(footprint={"ReachTranscript"}, digest=fail_target)
     good = ReachabilityTranscript(
         (
-            TransitionRecord("g0", "g1", "patch", "t1"),
-            TransitionRecord("g1", "g2", "gate", "t2"),
+            TransitionRecord(
+                digest_log(()),
+                abort_target,
+                "abort",
+                digest_json(abort_result.to_json()),
+                witness_kind="abort",
+                witness_digest=digest_json(abort_witness),
+                capacity_class="abort",
+                witness=abort_witness,
+            ),
+            TransitionRecord(
+                abort_target,
+                fail_target,
+                "failClosed",
+                digest_json(fail_result.to_json()),
+                witness_kind="failClosed",
+                witness_digest=digest_json(fail_witness),
+                capacity_class="failClosed",
+                witness=fail_witness,
+            ),
         ),
         assumptions=("PhysicalActuator",),
     )
@@ -196,7 +286,7 @@ def test_certificate_liveness_rejects_bad_family_issuer_expiry_and_dependency() 
     state = FoldKernel().fold(h, base_log())
     live = check_certificate_live(state, "c-risk", 6, horizon=h)
     assert live.ok
-    assert live.assumptions == ("StatisticalModel",)
+    assert live.assumptions == ("CertificateFamilyChecker", "StatisticalModel")
 
     bad_log = [
         env("e1", 1, "Evidence", evidence_id="u1"),
@@ -225,12 +315,35 @@ def test_patch_touch_matrix_and_frame_invalidation_repairs() -> None:
         append=(
             env("e10", 10, "RevokeCap", capability_id="cap1"),
             env("e11", 11, "RevokeOutbox", outbox_id="out1"),
-            env("e12", 12, "Suspended", frame_id="p1"),
+            env("e12", 12, "ReleaseResource", lease_id="lease1"),
+            env("e13", 13, "Suspended", frame_id="p1"),
         ),
         affected_invariants=("status",),
-        write_classes=(WriteClass("FrameStatus", "p1"),),
+        write_classes=(
+            WriteClass("Capability", "cap1"),
+            WriteClass("Outbox", "out1"),
+            WriteClass("Resource", "lease1"),
+            WriteClass("FrameStatus", "p1"),
+        ),
+        write_cover=WriteCover(
+            (
+                WriteClass("Capability", "cap1"),
+                WriteClass("Outbox", "out1"),
+                WriteClass("Resource", "lease1"),
+                WriteClass("FrameStatus", "p1"),
+            ),
+            ("e10", "e11", "e12", "e13"),
+        ),
         read_footprints=(ReadFootprint("status", ("frame:p1",)),),
-        touch_matrix=TouchMatrix({"FrameStatus:p1|frame:p1": "touch"}),
+        touch_matrix=TouchMatrix(
+            {
+                "Capability:cap1|frame:p1": "non_touch",
+                "Outbox:out1|frame:p1": "non_touch",
+                "Resource:lease1|frame:p1": "non_touch",
+                "FrameStatus:p1|frame:p1": "touch",
+            }
+        ),
+        liveness_repairs=("capability:cap1", "outbox:out1", "resource:lease1", "risk:r1"),
     )
     assert PatchChecker().check(horizon(), log, proposal, invariants={"status": lambda *_: digest_ok()}).ok
 
@@ -277,3 +390,7 @@ def test_cli_new_commands(tmp_path: Path, capsys: object) -> None:
     bad_path = tmp_path / "bad.json"
     bad_path.write_text("{}", encoding="utf-8")
     assert main(["validate-schema", "gate-request", str(bad_path)]) == 1
+    bad_request_path = tmp_path / "bad-request.json"
+    bad_request_path.write_text(json.dumps({**gate_request().to_json(), "risk_claim": []}), encoding="utf-8")
+    assert main(["check-gate", "--horizon", str(horizon_path), str(bad_request_path), str(log_path)]) == 1
+    assert "gate request is malformed" in capsys.readouterr().out

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://problem-frame-gate.local/schemas/source-cut.schema.json",
+  "title": "Problem Frame Gate Source Cut",
+  "type": "object",
+  "required": [
+    "cut_id",
+    "source_time",
+    "included_eids",
+    "excluded_frontier_eids",
+    "digest",
+    "clock_rows",
+    "watermark_rows"
+  ],
+  "properties": {
+    "cut_id": {"type": "string", "minLength": 1},
+    "source_time": {"type": "integer"},
+    "included_eids": {"type": "array", "items": {"type": "string"}},
+    "excluded_frontier_eids": {"type": "array", "items": {"type": "string"}},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "clock_rows": {"type": "array", "items": {"type": "string"}},
+    "watermark_rows": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

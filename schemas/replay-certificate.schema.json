@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://problem-frame-gate.local/schemas/replay-certificate.schema.json",
+  "title": "Problem Frame Gate Replay Certificate",
+  "type": "object",
+  "required": ["word", "swaps", "cover", "target_digest"],
+  "properties": {
+    "word": {"type": "array", "items": {"type": "string"}},
+    "swaps": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "prefixItems": [{"type": "integer"}, {"type": "string"}, {"type": "string"}],
+        "minItems": 3,
+        "maxItems": 3
+      }
+    },
+    "cover": {
+      "type": "object",
+      "required": ["independent_pairs", "component_equalities"],
+      "properties": {
+        "independent_pairs": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [{"type": "string"}, {"type": "string"}],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "component_equalities": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "target_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}

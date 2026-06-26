@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://problem-frame-gate.local/schemas/risk-claim.schema.json",
+  "title": "Problem Frame Gate Risk Claim",
+  "type": "object",
+  "required": [
+    "claim_id",
+    "risk_id",
+    "hypothesis_id",
+    "mode",
+    "cert_id",
+    "eta",
+    "event_id",
+    "standardized_event_id",
+    "route_witness",
+    "assumption"
+  ],
+  "properties": {
+    "claim_id": {"type": "string", "minLength": 1},
+    "risk_id": {"type": "string", "minLength": 1},
+    "hypothesis_id": {"type": "string", "minLength": 1},
+    "mode": {"enum": ["fixed", "selectedEvent", "conditionalSelective", "anytime"]},
+    "cert_id": {"type": "string", "minLength": 1},
+    "eta": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(/[1-9][0-9]*)?$"},
+    "event_id": {"type": "string"},
+    "standardized_event_id": {"type": "string"},
+    "selection_event_id": {"type": ["string", "null"]},
+    "stopping_time_id": {"type": ["string", "null"]},
+    "selection_time": {"type": ["integer", "null"]},
+    "ledger_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "assumption": {"type": "string", "minLength": 1},
+    "route_witness": {
+      "type": "object",
+      "required": ["accepted", "checker", "transcript_digest", "route", "spend_before_selection", "assumption"],
+      "properties": {
+        "accepted": {"const": true},
+        "checker": {"type": "string", "minLength": 1},
+        "transcript_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "route": {"type": "string", "minLength": 1},
+        "spend_before_selection": {"type": "boolean"},
+        "assumption": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

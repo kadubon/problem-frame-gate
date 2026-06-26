@@ -17,10 +17,31 @@
   ],
   "properties": {
     "strict": {"const": true},
-    "capacities": {"type": "object"},
-    "writer_authority": {"type": "object"},
-    "version_intervals": {"type": "object"},
-    "protected_constructors": {"type": "object"},
+    "events": {"type": "array", "items": {"type": "string"}},
+    "capacities": {
+      "type": "object",
+      "required": ["normal", "abort", "failClosed"],
+      "properties": {
+        "normal": {"type": "integer", "minimum": 0},
+        "abort": {"type": "integer", "minimum": 0},
+        "failClosed": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "writer_authority": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+    "version_intervals": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["minimum", "maximum"],
+        "properties": {
+          "minimum": {"type": "integer", "minimum": 1},
+          "maximum": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "protected_constructors": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
     "gate_bundle_kinds": {
       "type": "array",
       "prefixItems": [
@@ -35,7 +56,21 @@
     },
     "executor_writer": {"type": "string"},
     "clock_policy": {"type": "string"},
-    "certificate_families": {"type": "object"},
-    "risk_modes": {"type": "array", "items": {"type": "string"}}
-  }
+    "certificate_families": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+    "risk_modes": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "fixed"},
+        {"const": "selectedEvent"},
+        {"const": "conditionalSelective"},
+        {"const": "anytime"}
+      ],
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "env_assumptions": {"type": "array", "items": {"type": "string"}},
+    "codebook": {"type": "array", "items": {"type": "string"}},
+    "allow_local_paths": {"type": "boolean"}
+  },
+  "additionalProperties": false
 }

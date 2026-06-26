@@ -26,8 +26,8 @@ Update both:
 Then tag:
 
 ```bash
-git tag -a v0.3.0 -m "problem-frame-gate v0.3.0"
-git push origin v0.3.0
+git tag -a v1.0.0 -m "problem-frame-gate v1.0.0"
+git push origin v1.0.0
 ```
 
 The release workflow builds the package and publishes from the GitHub

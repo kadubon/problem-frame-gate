@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://problem-frame-gate.local/schemas/gate-bundle.schema.json",
+  "title": "Problem Frame Gate Bundle",
+  "type": "object",
+  "required": ["record", "envelopes", "source_cut"],
+  "properties": {
+    "record": {
+      "type": "object",
+      "required": [
+        "gate_id",
+        "bundle_id",
+        "frame_id",
+        "action",
+        "outbox_id",
+        "capability_id",
+        "lease_id",
+        "risk_id",
+        "hypothesis_id",
+        "risk_mode",
+        "risk_cert_id",
+        "source_digest",
+        "ledger_digest",
+        "transcript_digest",
+        "source_time",
+        "commit_time"
+      ],
+      "properties": {
+        "gate_id": {"type": "string", "minLength": 1},
+        "bundle_id": {"type": "string", "minLength": 1},
+        "frame_id": {"type": "string", "minLength": 1},
+        "action": {"type": "string", "minLength": 1},
+        "outbox_id": {"type": "string", "minLength": 1},
+        "capability_id": {"type": "string", "minLength": 1},
+        "lease_id": {"type": "string", "minLength": 1},
+        "risk_id": {"type": "string", "minLength": 1},
+        "hypothesis_id": {"type": "string", "minLength": 1},
+        "risk_mode": {"enum": ["fixed", "selectedEvent", "conditionalSelective", "anytime"]},
+        "risk_cert_id": {"type": "string", "minLength": 1},
+        "source_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "ledger_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+        "transcript_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "source_time": {"type": "integer"},
+        "commit_time": {"type": "integer"}
+      },
+      "additionalProperties": true
+    },
+    "envelopes": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {"$ref": "#/$defs/envelope"}
+    },
+    "source_cut": {"$ref": "source-cut.schema.json"}
+  },
+  "$defs": {
+    "envelope": {
+      "type": "object",
+      "required": ["eid", "event", "slot", "commit", "writer", "owner", "version", "class", "payload"],
+      "properties": {
+        "eid": {"type": "string", "minLength": 1},
+        "event": {"type": "string", "minLength": 1},
+        "slot": {"type": "string"},
+        "commit": {"type": "integer"},
+        "writer": {"type": "string", "minLength": 1},
+        "owner": {"type": "string"},
+        "version": {"type": "integer", "minimum": 1},
+        "class": {"enum": ["normal", "abort", "failClosed"]},
+        "payload": {"type": "object", "required": ["kind"], "additionalProperties": true},
+        "dependencies": {"type": "array"},
+        "commit_group": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

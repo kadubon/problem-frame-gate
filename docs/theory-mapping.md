@@ -58,6 +58,8 @@ ordering.
 - required certificates are live;
 - source time precedes commit time;
 - source-prefix digest matches when supplied.
+- `GateCheck` embeds a first-class source cut, gate record, gate-record digest,
+  and transcript digest.
 
 The verifier rejects any standalone or incoherent gate row.  Accepted bundles
 contain:
@@ -77,6 +79,29 @@ explicit trusted-footprint items.
 
 Domain checks should be written as small invariant functions passed to
 `PatchChecker` or as additional `StateComponent` implementations.
+
+## v1 Coverage
+
+| Area | v1 executable check | Still external |
+| --- | --- | --- |
+| Source cut | included set, excluded frontier, dependency closure, commit-group closure, digest equality | trustworthy storage clock |
+| Gate bundle | five-row order, commit group, tuple equality, source cut, gate record, transcript digest, close row | real actuator effect |
+| Certificate | issuer table, issue row, expiry, revocation, dependency digest, source availability, family-check record | real issuer authentication and key custody |
+| Risk | reserve before spend, single spend, close state, four route shapes, route witness, finite alpha bound | statistical model validity |
+| Patch | append-only ids, write universe, touch/non-touch matrix, affected completeness, transported cells, liveness repairs | domain invariant correctness |
+| Join | common ancestor, conflicting envelope ids, escrow conflict keys, repair witnesses, repair rechecks, liveness repair | semantic merge policy chosen by deployment |
+| Reachability | transition kind, digest chain, typed witness payload, patch/join/gate checker replay, abort/fail-closed row class | the external transition premise itself |
+
+## Witness Replay Boundary
+
+| Witness | Replayed by this package | Remains an assumption unless supplied by deployment |
+| --- | --- | --- |
+| Certificate family | issue row shape, dependency digest, source availability, revocation frontier, optional callable registry checker | issuer identity, key custody, external source truth |
+| Risk route | finite route witness shape, spend-before-selection, alpha accounting, optional callable registry checker | statistical model validity |
+| Gate | source fold, active frame, capability, resource, outbox, live certificate, live risk spend, bundle transcript | actuator effect after dispatch |
+| Patch | source digest, append-only ids, write cover, touch matrix, transported cells, liveness repair | correctness of domain invariant functions |
+| Join | common ancestor, conflict keys, repair witnesses, repair rechecks | semantic merge policy selected by the deployment |
+| Reachability | typed patch/join/gate witness replay and abort/fail-closed row checks | real-world transition premise outside the finite log |
 
 ## Commercial-Use Boundary
 

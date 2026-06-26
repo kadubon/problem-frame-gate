@@ -12,6 +12,7 @@ from .digest import digest_json
 from .fold import FoldKernel
 from .gate import ExecutorGate, GateRequest
 from .model import Envelope, Horizon
+from .schema import validate_json_artifact
 from .security import scan_for_sensitive_data
 from .verifier import EnvelopeVerifier
 
@@ -46,7 +47,21 @@ def main(argv: list[str] | None = None) -> int:
     gate_cmd.add_argument("--bundle", action="store_true", help="print the accepted gate bundle")
 
     schema_cmd = sub.add_parser("validate-schema", help="validate a known JSON artifact shape")
-    schema_cmd.add_argument("kind", choices=["horizon", "log", "gate-request"])
+    schema_cmd.add_argument(
+        "kind",
+        choices=[
+            "horizon",
+            "log",
+            "gate-request",
+            "gate-bundle",
+            "source-cut",
+            "replay-certificate",
+            "risk-claim",
+            "patch-proposal",
+            "join-proposal",
+            "reachability",
+        ],
+    )
     schema_cmd.add_argument("path")
 
     explain_cmd = sub.add_parser("explain", help="explain a checker issue code")
@@ -79,7 +94,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check-gate":
         horizon = Horizon.from_mapping(_read_json(args.horizon))
         envelopes = _read_log(args.log)
-        request = _read_gate_request(args.request)
+        try:
+            request = _read_gate_request(args.request)
+        except (KeyError, TypeError, ValueError) as exc:
+            print(json.dumps({"ok": False, "errors": [f"gate request is malformed: {exc}"]}, indent=2, sort_keys=True))
+            return 1
         gate = ExecutorGate()
         result = gate.check(horizon, envelopes, request)
         if args.bundle and result.ok:
@@ -114,52 +133,11 @@ def _read_gate_request(path: str | Path) -> GateRequest:
     data = _read_json(path)
     if not isinstance(data, dict):
         raise ValueError("gate request JSON must be an object")
-    return GateRequest(**data)
+    return GateRequest.from_mapping(data)
 
 
 def _validate_schema(kind: str, data: Any) -> list[str]:
-    errors: list[str] = []
-    if kind == "horizon":
-        if not isinstance(data, dict):
-            return ["horizon must be a JSON object"]
-        required_horizon: tuple[str, ...] = (
-            "capacities",
-            "writer_authority",
-            "version_intervals",
-            "protected_constructors",
-            "certificate_families",
-            "risk_modes",
-        )
-        errors.extend(f"missing {field}" for field in required_horizon if field not in data)
-    elif kind == "log":
-        if not isinstance(data, list):
-            return ["log must be a JSON array"]
-        for index, item in enumerate(data):
-            if not isinstance(item, dict):
-                errors.append(f"log[{index}] must be an object")
-                continue
-            if "payload" not in item or not isinstance(item["payload"], dict) or "kind" not in item["payload"]:
-                errors.append(f"log[{index}] must contain payload.kind")
-    elif kind == "gate-request":
-        if not isinstance(data, dict):
-            return ["gate request must be a JSON object"]
-        required_gate: tuple[str, ...] = (
-            "gate_id",
-            "bundle_id",
-            "frame_id",
-            "action",
-            "outbox_id",
-            "capability_id",
-            "lease_id",
-            "risk_id",
-            "hypothesis_id",
-            "risk_mode",
-            "risk_cert_id",
-            "source_time",
-            "commit_time",
-        )
-        errors.extend(f"missing {field}" for field in required_gate if field not in data)
-    return errors
+    return validate_json_artifact(kind, data)
 
 
 def _explain(code: str) -> str:

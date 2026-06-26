@@ -6,12 +6,14 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from .certificates import all_certificates_live
+from .certificates import CertificateFamily, all_certificates_live
+from .digest import digest_json
 from .fold import FoldKernel, FoldState
 from .formation import check_well_audited
 from .model import Envelope, EnvelopeClass, Horizon, Status
+from .records import SourceCut
 from .result import CheckBuilder, CheckResult
-from .risk import check_risk_spend_live
+from .risk import RiskClaimRecord, RiskMode, check_risk_claims, check_risk_spend_live
 from .verifier import EnvelopeVerifier, digest_log
 
 
@@ -37,7 +39,42 @@ class GateRequest:
     ledger_digest: str | None = None
     expected_source_digest: str | None = None
     required_certificate_ids: tuple[str, ...] = ()
+    risk_claim: Mapping[str, Any] | None = None
+    risk_alpha: str = "1"
     metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> GateRequest:
+        if not isinstance(value, Mapping):
+            raise TypeError("gate request must be an object")
+        risk_claim_value = value.get("risk_claim")
+        if risk_claim_value is not None and not isinstance(risk_claim_value, Mapping):
+            raise TypeError("risk_claim must be an object")
+        return cls(
+            gate_id=str(value["gate_id"]),
+            bundle_id=str(value["bundle_id"]),
+            frame_id=str(value["frame_id"]),
+            action=str(value["action"]),
+            outbox_id=str(value["outbox_id"]),
+            capability_id=str(value["capability_id"]),
+            lease_id=str(value["lease_id"]),
+            risk_id=str(value["risk_id"]),
+            hypothesis_id=str(value["hypothesis_id"]),
+            risk_mode=str(value["risk_mode"]),
+            risk_cert_id=str(value["risk_cert_id"]),
+            source_time=int(value["source_time"]),
+            commit_time=int(value["commit_time"]),
+            executor_id=str(value.get("executor_id", "executor")),
+            resource_amount=value.get("resource_amount", 1),
+            ledger_digest=str(value["ledger_digest"]) if value.get("ledger_digest") is not None else None,
+            expected_source_digest=(
+                str(value["expected_source_digest"]) if value.get("expected_source_digest") is not None else None
+            ),
+            required_certificate_ids=tuple(str(item) for item in value.get("required_certificate_ids", ())),
+            risk_claim=dict(risk_claim_value) if risk_claim_value is not None else None,
+            risk_alpha=str(value.get("risk_alpha", "1")),
+            metadata=dict(value.get("metadata", {})),
+        )
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -59,6 +96,8 @@ class GateRequest:
             "ledger_digest": self.ledger_digest,
             "expected_source_digest": self.expected_source_digest,
             "required_certificate_ids": list(self.required_certificate_ids),
+            "risk_claim": dict(self.risk_claim) if self.risk_claim is not None else None,
+            "risk_alpha": self.risk_alpha,
             "metadata": dict(self.metadata),
         }
 
@@ -105,6 +144,27 @@ class GateRecord:
             commit_time=request.commit_time,
         )
 
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> GateRecord:
+        return cls(
+            gate_id=str(value["gate_id"]),
+            bundle_id=str(value["bundle_id"]),
+            frame_id=str(value["frame_id"]),
+            action=str(value["action"]),
+            outbox_id=str(value["outbox_id"]),
+            capability_id=str(value["capability_id"]),
+            lease_id=str(value["lease_id"]),
+            risk_id=str(value["risk_id"]),
+            hypothesis_id=str(value["hypothesis_id"]),
+            risk_mode=str(value["risk_mode"]),
+            risk_cert_id=str(value["risk_cert_id"]),
+            source_digest=str(value["source_digest"]),
+            ledger_digest=str(value["ledger_digest"]) if value.get("ledger_digest") is not None else None,
+            transcript_digest=str(value["transcript_digest"]),
+            source_time=int(value["source_time"]),
+            commit_time=int(value["commit_time"]),
+        )
+
     def to_json(self) -> dict[str, Any]:
         return {
             "gate_id": self.gate_id,
@@ -132,6 +192,7 @@ class GateBundle:
 
     record: GateRecord
     envelopes: tuple[Envelope, ...]
+    source_cut: SourceCut | None = None
 
     def __iter__(self) -> Iterator[Envelope]:
         return iter(self.envelopes)
@@ -140,13 +201,35 @@ class GateBundle:
         return len(self.envelopes)
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "record": self.record.to_json(),
             "envelopes": [env.to_json() for env in self.envelopes],
         }
+        if self.source_cut is not None:
+            data["source_cut"] = self.source_cut.to_json()
+        return data
 
-    def verify(self, horizon: Horizon, source: Sequence[Envelope]) -> CheckResult:
-        return EnvelopeVerifier().verify(horizon, tuple(source) + self.envelopes)
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> GateBundle:
+        source_cut_value = value.get("source_cut")
+        return cls(
+            record=GateRecord.from_mapping(_mapping(value["record"])),
+            envelopes=tuple(Envelope.from_mapping(item) for item in _sequence(value["envelopes"])),
+            source_cut=SourceCut.from_mapping(source_cut_value) if isinstance(source_cut_value, Mapping) else None,
+        )
+
+    def verify(
+        self,
+        horizon: Horizon,
+        source: Sequence[Envelope],
+        *,
+        certificate_registry: Mapping[str, CertificateFamily] | None = None,
+        risk_registry: Mapping[str, RiskMode] | None = None,
+    ) -> CheckResult:
+        return EnvelopeVerifier(
+            certificate_registry=certificate_registry,
+            risk_registry=risk_registry,
+        ).verify(horizon, tuple(source) + self.envelopes)
 
 
 class ExecutorGate:
@@ -163,8 +246,16 @@ class ExecutorGate:
         }
     )
 
-    def __init__(self, fold_kernel: FoldKernel | None = None) -> None:
+    def __init__(
+        self,
+        fold_kernel: FoldKernel | None = None,
+        *,
+        certificate_registry: Mapping[str, CertificateFamily] | None = None,
+        risk_registry: Mapping[str, RiskMode] | None = None,
+    ) -> None:
         self.fold_kernel = fold_kernel or FoldKernel()
+        self.certificate_registry = certificate_registry
+        self.risk_registry = risk_registry
 
     def check(self, horizon: Horizon, envelopes: Sequence[Envelope], request: GateRequest) -> CheckResult:
         builder = CheckBuilder(footprint=set(self.footprint))
@@ -189,7 +280,11 @@ class ExecutorGate:
         builder_result = builder.result(digest=source_digest)
         semantic = self._check_state(state, request)
         certificates = all_certificates_live(
-            state, request.required_certificate_ids, request.source_time, horizon=horizon
+            state,
+            request.required_certificate_ids,
+            request.source_time,
+            horizon=horizon,
+            registry=self.certificate_registry,
         )
         risk = check_risk_spend_live(
             state,
@@ -200,8 +295,10 @@ class ExecutorGate:
             at_time=request.source_time,
             ledger_digest=request.ledger_digest,
             horizon=horizon,
+            certificate_registry=self.certificate_registry,
         )
-        return builder_result.merge(check_well_audited(state), semantic, certificates, risk)
+        risk_claim = self._check_risk_claim(state, request, horizon)
+        return builder_result.merge(check_well_audited(state), semantic, certificates, risk, risk_claim)
 
     def create_bundle(
         self,
@@ -220,8 +317,18 @@ class ExecutorGate:
 
         source_prefix = tuple(env for env in envelopes if env.commit_time <= request.source_time)
         source_digest = digest_log(source_prefix)
-        transcript_digest = result.digest or source_digest
+        transcript_digest = digest_json(result.to_json())
         record = GateRecord.from_request(request, source_digest=source_digest, transcript_digest=transcript_digest)
+        source_cut = SourceCut(
+            cut_id=f"{request.gate_id}:source-cut",
+            source_time=request.source_time,
+            included_eids=tuple(env.eid for env in source_prefix),
+            excluded_frontier_eids=tuple(env.eid for env in envelopes if env.commit_time > request.source_time),
+            digest=source_digest,
+            clock_rows=(f"source_time:{request.source_time}", f"commit_time:{request.commit_time}"),
+            watermark_rows=(f"source_digest:{source_digest}",),
+        )
+        gate_record_digest = digest_json(record.to_json())
         payloads: tuple[Mapping[str, Any], ...] = (
             {
                 "kind": "GateCheck",
@@ -230,8 +337,11 @@ class ExecutorGate:
                 "frame_id": request.frame_id,
                 "action": request.action,
                 "source_digest": source_digest,
+                "source_cut": source_cut.to_json(),
                 "request": request.to_json(),
                 "gate_record": record.to_json(),
+                "gate_record_digest": gate_record_digest,
+                "transcript_digest": transcript_digest,
             },
             {
                 "kind": "OutboxClaim",
@@ -278,8 +388,13 @@ class ExecutorGate:
             )
             for index, payload in enumerate(payloads)
         )
-        gate_bundle = GateBundle(record=record, envelopes=bundle)
-        verify = gate_bundle.verify(horizon, envelopes)
+        gate_bundle = GateBundle(record=record, envelopes=bundle, source_cut=source_cut)
+        verify = gate_bundle.verify(
+            horizon,
+            envelopes,
+            certificate_registry=self.certificate_registry,
+            risk_registry=self.risk_registry,
+        )
         if not verify.ok:
             messages = "; ".join(issue.message for issue in verify.issues if issue.severity == "error")
             raise ValueError(f"created gate bundle failed verification: {messages}")
@@ -363,3 +478,67 @@ class ExecutorGate:
                 )
 
         return builder.result()
+
+    def _check_risk_claim(self, state: FoldState, request: GateRequest, horizon: Horizon) -> CheckResult:
+        builder = CheckBuilder(footprint={"RiskLedger", "RiskTranscript"})
+        if request.risk_claim is None:
+            if horizon.strict:
+                builder.error(
+                    "gate-risk-claim-missing",
+                    "strict gate request must bind an accepted risk claim record",
+                    location=request.risk_id,
+                )
+            return builder.result()
+        try:
+            claim = RiskClaimRecord.from_mapping(request.risk_claim)
+        except (KeyError, TypeError, ValueError) as exc:
+            builder.error(
+                "gate-risk-claim",
+                f"gate risk claim is malformed: {exc}",
+                location=request.risk_id,
+            )
+            return builder.result()
+        expected = {
+            "risk_id": request.risk_id,
+            "hypothesis_id": request.hypothesis_id,
+            "mode": request.risk_mode,
+            "cert_id": request.risk_cert_id,
+            "ledger_digest": request.ledger_digest,
+        }
+        actual = {
+            "risk_id": claim.risk_id,
+            "hypothesis_id": claim.hypothesis_id,
+            "mode": claim.mode,
+            "cert_id": claim.cert_id,
+            "ledger_digest": claim.ledger_digest,
+        }
+        for field_name, expected_value in expected.items():
+            if actual[field_name] != expected_value:
+                builder.error(
+                    "gate-risk-claim-coherence",
+                    "risk claim record does not match the gate request tuple",
+                    location=claim.claim_id,
+                    details={"field": field_name, "expected": expected_value, "actual": actual[field_name]},
+                )
+        claim_result = check_risk_claims(
+            state,
+            (claim,),
+            alpha=request.risk_alpha,
+            at_time=request.source_time,
+            horizon=horizon,
+            registry=self.risk_registry,
+            certificate_registry=self.certificate_registry,
+        )
+        return builder.result().merge(claim_result)
+
+
+def _mapping(value: object) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise TypeError("expected object mapping")
+    return value
+
+
+def _sequence(value: object) -> Sequence[Mapping[str, Any]]:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        raise TypeError("expected sequence")
+    return tuple(_mapping(item) for item in value)

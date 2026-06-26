@@ -31,6 +31,7 @@ from problem_frame_gate import (
     ReadFootprint,
     ReplayCertificate,
     RiskClaimRecord,
+    RiskRouteWitness,
     SourceCut,
     StrictManifest,
     SwapCover,
@@ -104,6 +105,20 @@ def strict_horizon() -> Horizon:
     return Horizon.strict_default(agent_writers=("agent",), normal_capacity=200)
 
 
+def cert_check(
+    *, dependencies: tuple[str, ...] = (), source_ids: tuple[str, ...] = (), checked_at: int = 2
+) -> dict[str, object]:
+    return {
+        "accepted": True,
+        "checker": "unit-certificate-family-v1",
+        "transcript_digest": digest_json({"checker": "unit-certificate-family-v1", "accepted": True}),
+        "dependency_digest": digest_json({"dependencies": sorted(dependencies), "source_ids": sorted(source_ids)}),
+        "revocation_frontier": [],
+        "checked_at": checked_at,
+        "assumption": "CertificateFamilyChecker",
+    }
+
+
 def gate_source_log() -> list[Envelope]:
     return [
         env(
@@ -129,7 +144,7 @@ def gate_source_log() -> list[Envelope]:
             source_ids=["src"],
             dependencies=["src"],
             expires_at=50,
-            family_check="ok",
+            family_check=cert_check(dependencies=("src",), source_ids=("src",)),
             assumption="StatisticalModel",
         ),
         env("active", 3, "Activated", frame_id="p1"),
@@ -153,6 +168,22 @@ def gate_source_log() -> list[Envelope]:
 
 
 def gate_request(**overrides: object) -> GateRequest:
+    risk_claim = RiskClaimRecord(
+        claim_id="q1",
+        risk_id="r1",
+        hypothesis_id="h1",
+        mode="fixed",
+        cert_id="risk-cert",
+        eta="1/100",
+        event_id="F1",
+        standardized_event_id="F1",
+        route_witness=RiskRouteWitness(
+            accepted=True,
+            checker="unit-risk-route-v1",
+            transcript_digest=digest_json({"checker": "unit-risk-route-v1", "mode": "fixed"}),
+            route="fixed",
+        ),
+    )
     data: dict[str, object] = {
         "gate_id": "gate1",
         "bundle_id": "bundle1",
@@ -167,6 +198,8 @@ def gate_request(**overrides: object) -> GateRequest:
         "risk_cert_id": "risk-cert",
         "source_time": 9,
         "commit_time": 10,
+        "risk_claim": risk_claim.to_json(),
+        "risk_alpha": "1/50",
     }
     data.update(overrides)
     return GateRequest(**data)
@@ -246,7 +279,7 @@ def test_model_parsers_manifest_and_transcripts() -> None:
     manifest = StrictManifest.minimal(agent_writers=("agent",))
     assert manifest.strict
     assert StrictManifest.from_mapping({**manifest.to_json(), "strict": False}).strict
-    assert CertificateFamily("risk", ("agent",), "StatisticalModel").to_json()["issuers"] == ["agent"]
+    assert CertificateFamily("risk", ("agent",), assumption="StatisticalModel").to_json()["issuers"] == ["agent"]
     transcript = AuditTranscript(
         "checker",
         objects=("o",),
@@ -468,7 +501,17 @@ def test_risk_claim_modes_and_ledger_failures() -> None:
 
     claims = (
         RiskClaimRecord("c1", "r1", "h1", "fixed", "risk-cert", "1/100", "", "std"),
-        RiskClaimRecord("c2", "r1", "h1", "selectedEvent", "risk-cert", "1/100", "event", "std", selection_time=5),
+        RiskClaimRecord(
+            "c2",
+            "r1",
+            "h1",
+            "selectedEvent",
+            "risk-cert",
+            "1/100",
+            "event",
+            "std",
+            selection_time=5,
+        ),
         RiskClaimRecord(
             "c3",
             "r1",
@@ -478,7 +521,6 @@ def test_risk_claim_modes_and_ledger_failures() -> None:
             "1/100",
             "event",
             "std",
-            route_check=False,
         ),
         RiskClaimRecord("c4", "r1", "h1", "anytime", "risk-cert", "1/100", "event", "std"),
     )
@@ -489,7 +531,7 @@ def test_risk_claim_modes_and_ledger_failures() -> None:
         "risk-fixed-event",
         "risk-selection-event",
         "risk-post-selection-reserve",
-        "risk-conditional-route",
+        "risk-route-witness",
         "risk-stopping-time",
         "risk-alpha-bound",
     } <= claim_codes
@@ -750,12 +792,12 @@ def test_cli_additional_paths(tmp_path: Path, capsys: pytest.CaptureFixture[str]
         _read_log(bad_log_path)
     with pytest.raises(ValueError, match="gate request"):
         _read_gate_request(bad_request_path)
-    assert _validate_schema("horizon", []) == ["horizon must be a JSON object"]
-    assert _validate_schema("log", ["bad", {"payload": {}}]) == [
-        "log[0] must be an object",
-        "log[1] must contain payload.kind",
-    ]
-    assert _validate_schema("gate-request", []) == ["gate request must be a JSON object"]
+    assert _validate_schema("horizon", []) == ["$: expected type object"]
+    log_errors = _validate_schema("log", ["bad", {"payload": {}}])
+    assert "$[0]: expected type object" in log_errors
+    assert "$[1]: missing eid" in log_errors
+    assert "$[1].payload: missing kind" in log_errors
+    assert _validate_schema("gate-request", []) == ["$: expected type object"]
 
     assert main(["explain", "unknown-code"]) == 0
     assert "No detailed explanation" in capsys.readouterr().out

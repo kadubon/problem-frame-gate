@@ -1,0 +1,39 @@
+{
+  "action": "run-check",
+  "bundle_id": "bundle1",
+  "capability_id": "cap1",
+  "commit_time": 10,
+  "frame_id": "p1",
+  "gate_id": "gate1",
+  "hypothesis_id": "h1",
+  "lease_id": "lease1",
+  "outbox_id": "out1",
+  "risk_alpha": "1/50",
+  "risk_cert_id": "c-risk",
+  "risk_claim": {
+    "assumption": "StatisticalModel",
+    "cert_id": "c-risk",
+    "claim_id": "q1",
+    "eta": "1/100",
+    "event_id": "F1",
+    "hypothesis_id": "h1",
+    "ledger_digest": null,
+    "mode": "fixed",
+    "risk_id": "r1",
+    "route_witness": {
+      "accepted": true,
+      "assumption": "StatisticalModel",
+      "checker": "example-risk-route-v1",
+      "route": "fixed",
+      "spend_before_selection": true,
+      "transcript_digest": "sha256:2dec4bbd2ff232e51a06953bc9bcbeedaa0b7ce22f74e6a10df924cb50343169"
+    },
+    "selection_event_id": null,
+    "selection_time": null,
+    "standardized_event_id": "F1",
+    "stopping_time_id": null
+  },
+  "risk_id": "r1",
+  "risk_mode": "fixed",
+  "source_time": 9
+}

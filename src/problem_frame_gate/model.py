@@ -267,6 +267,7 @@ class Horizon:
         normal_capacity: int = 1000,
         abort_capacity: int = 100,
         fail_closed_capacity: int = 10,
+        env_assumptions: tuple[str, ...] = ("CertificateFamilyChecker", "StatisticalModel"),
     ) -> Horizon:
         """Return a strict manifest suitable for examples and production templates."""
 
@@ -293,6 +294,7 @@ class Horizon:
                 "formation": agent_writers,
             },
             risk_modes=DEFAULT_RISK_MODES,
+            env_assumptions=env_assumptions,
             codebook=DEFAULT_RISK_MODES,
         )
 

@@ -13,8 +13,12 @@ from problem_frame_gate import (
     PatchChecker,
     PatchProposal,
     ReadFootprint,
+    RiskClaimRecord,
+    RiskRouteWitness,
     TouchMatrix,
     WriteClass,
+    WriteCover,
+    digest_json,
     digest_log,
 )
 from problem_frame_gate.join import JoinChecker
@@ -32,6 +36,18 @@ def env(eid: str, commit: int, kind: str, **payload: object) -> Envelope:
         envelope_class=EnvelopeClass.NORMAL,
         payload={"kind": kind, **payload},
     )
+
+
+def cert_check() -> dict[str, object]:
+    return {
+        "accepted": True,
+        "checker": "unit-certificate-family-v1",
+        "transcript_digest": digest_json({"checker": "unit-certificate-family-v1", "accepted": True}),
+        "dependency_digest": digest_json({"dependencies": [], "source_ids": []}),
+        "revocation_frontier": [],
+        "checked_at": 2,
+        "assumption": "CertificateFamilyChecker",
+    }
 
 
 def horizon() -> Horizon:
@@ -53,7 +69,16 @@ def base_log() -> list[Envelope]:
             risk_ids=["r1"],
         ),
         env("e1", 1, "Evidence", evidence_id="u1", digest="sha256:source"),
-        env("e2", 2, "Issue", cert_id="c-risk", family="risk", issuer="agent", expires_at=99, family_check=True),
+        env(
+            "e2",
+            2,
+            "Issue",
+            cert_id="c-risk",
+            family="risk",
+            issuer="agent",
+            expires_at=99,
+            family_check=cert_check(),
+        ),
         env("e3", 3, "Activated", frame_id="p1"),
         env("e4", 4, "RiskReg", hypothesis_id="h1", family="fixed"),
         env("e5", 5, "RiskReserve", risk_id="r1", hypothesis_id="h1", frame_id="p1", eta="1/100"),
@@ -75,6 +100,22 @@ def base_log() -> list[Envelope]:
 
 
 def gate_request() -> GateRequest:
+    risk_claim = RiskClaimRecord(
+        claim_id="q1",
+        risk_id="r1",
+        hypothesis_id="h1",
+        mode="fixed",
+        cert_id="c-risk",
+        eta="1/100",
+        event_id="F1",
+        standardized_event_id="F1",
+        route_witness=RiskRouteWitness(
+            accepted=True,
+            checker="unit-risk-route-v1",
+            transcript_digest=digest_json({"checker": "unit-risk-route-v1", "mode": "fixed"}),
+            route="fixed",
+        ),
+    )
     return GateRequest(
         gate_id="gate1",
         bundle_id="bundle1",
@@ -89,6 +130,8 @@ def gate_request() -> GateRequest:
         risk_cert_id="c-risk",
         source_time=9,
         commit_time=10,
+        risk_claim=risk_claim.to_json(),
+        risk_alpha="1/50",
     )
 
 
@@ -134,6 +177,7 @@ def test_patch_checker_runs_affected_invariant() -> None:
         append=(env("e10", 10, "Evidence", evidence_id="u2"),),
         affected_invariants=("has-u2",),
         write_classes=(WriteClass("Evidence", "u2"),),
+        write_cover=WriteCover((WriteClass("Evidence", "u2"),), ("e10",)),
         read_footprints=(ReadFootprint("has-u2", ("u2",)),),
         touch_matrix=TouchMatrix({"Evidence:u2|u2": "touch"}),
     )

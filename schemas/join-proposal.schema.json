@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://problem-frame-gate.local/schemas/join-proposal.schema.json",
+  "title": "Problem Frame Gate Join Proposal",
+  "type": "object",
+  "required": ["branches", "ancestor"],
+  "properties": {
+    "branches": {"type": "array", "items": {"type": "array", "items": {"type": "object"}}},
+    "ancestor": {"type": "array", "items": {"type": "object"}},
+    "repairs": {"type": "array", "items": {"type": "object"}},
+    "escrow_conflicts": {"type": "array", "items": {"type": "string"}},
+    "join_keys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "branch_eids"],
+        "properties": {
+          "key": {"type": "string", "minLength": 1},
+          "branch_eids": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "repair_witnesses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["repair_eid", "conflict_key", "rechecked", "transcript_digest"],
+        "properties": {
+          "repair_eid": {"type": "string", "minLength": 1},
+          "conflict_key": {"type": "string", "minLength": 1},
+          "rechecked": {"type": "boolean"},
+          "transcript_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "affected_invariants": {"type": "array", "items": {"type": "string"}},
+    "repair_rechecks": {"type": "array", "items": {"type": "string"}},
+    "transcript_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}

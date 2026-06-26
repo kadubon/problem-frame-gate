@@ -10,10 +10,12 @@ from problem_frame_gate import (
     FormationProof,
     Horizon,
     RiskClaimRecord,
+    RiskRouteWitness,
     check_formation,
     check_risk_claims,
     check_risk_ledger,
     check_risk_spend_live,
+    digest_json,
     digest_log,
     summarize_risk_ledger,
 )
@@ -34,6 +36,29 @@ def env(eid: str, commit: int, kind: str, **payload: object) -> Envelope:
     )
 
 
+def cert_check(
+    *, dependencies: tuple[str, ...] = (), source_ids: tuple[str, ...] = (), checked_at: int = 2
+) -> dict[str, object]:
+    return {
+        "accepted": True,
+        "checker": "unit-certificate-family-v1",
+        "transcript_digest": digest_json({"checker": "unit-certificate-family-v1", "accepted": True}),
+        "dependency_digest": digest_json({"dependencies": sorted(dependencies), "source_ids": sorted(source_ids)}),
+        "revocation_frontier": [],
+        "checked_at": checked_at,
+        "assumption": "CertificateFamilyChecker",
+    }
+
+
+def route_witness(mode: str = "fixed") -> RiskRouteWitness:
+    return RiskRouteWitness(
+        accepted=True,
+        checker="unit-risk-route-v1",
+        transcript_digest=digest_json({"checker": "unit-risk-route-v1", "mode": mode}),
+        route=mode,
+    )
+
+
 def sample_log() -> list[Envelope]:
     return [
         env(
@@ -50,7 +75,16 @@ def sample_log() -> list[Envelope]:
             obligations=["human-review"],
         ),
         env("e1", 1, "Evidence", evidence_id="u1", digest="sha256:source"),
-        env("e2", 2, "Issue", cert_id="c-risk", family="risk", issuer="agent", expires_at=99, family_check=True),
+        env(
+            "e2",
+            2,
+            "Issue",
+            cert_id="c-risk",
+            family="risk",
+            issuer="agent",
+            expires_at=99,
+            family_check=cert_check(),
+        ),
         env("e3", 3, "Activated", frame_id="p1"),
         env("e4", 4, "RiskReg", hypothesis_id="h1", family="fixed"),
         env("e5", 5, "RiskReserve", risk_id="r1", hypothesis_id="h1", frame_id="p1", eta="1/100"),
@@ -137,6 +171,7 @@ def test_risk_ledger_summary_and_live_spend() -> None:
             eta="1/100",
             event_id="F1",
             standardized_event_id="F1",
+            route_witness=route_witness("fixed"),
         ),
     )
     assert check_risk_claims(state, claims, alpha="1/50", at_time=6, horizon=horizon).ok

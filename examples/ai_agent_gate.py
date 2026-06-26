@@ -1,4 +1,13 @@
-from problem_frame_gate import Envelope, EnvelopeClass, ExecutorGate, GateRequest, Horizon
+from problem_frame_gate import (
+    Envelope,
+    EnvelopeClass,
+    ExecutorGate,
+    GateRequest,
+    Horizon,
+    RiskClaimRecord,
+    RiskRouteWitness,
+    digest_json,
+)
 
 
 def env(eid: str, commit: int, kind: str, **payload: object) -> Envelope:
@@ -17,6 +26,16 @@ def env(eid: str, commit: int, kind: str, **payload: object) -> Envelope:
 
 horizon = Horizon.strict_default(agent_writers=("agent",), normal_capacity=100)
 
+family_check = {
+    "accepted": True,
+    "checker": "example-certificate-family-v1",
+    "transcript_digest": digest_json({"checker": "example-certificate-family-v1", "accepted": True}),
+    "dependency_digest": digest_json({"dependencies": [], "source_ids": []}),
+    "revocation_frontier": [],
+    "checked_at": 2,
+    "assumption": "CertificateFamilyChecker",
+}
+
 log = [
     env(
         "e0",
@@ -31,7 +50,16 @@ log = [
         risk_ids=["r1"],
     ),
     env("e1", 1, "Evidence", evidence_id="u1", digest="sha256:source"),
-    env("e2", 2, "Issue", cert_id="c-risk", family="risk", issuer="agent", expires_at=99, family_check=True),
+    env(
+        "e2",
+        2,
+        "Issue",
+        cert_id="c-risk",
+        family="risk",
+        issuer="agent",
+        expires_at=99,
+        family_check=family_check,
+    ),
     env("e3", 3, "Activated", frame_id="p1"),
     env("e4", 4, "RiskReg", hypothesis_id="h1", family="fixed"),
     env("e5", 5, "RiskReserve", risk_id="r1", hypothesis_id="h1", frame_id="p1", eta="1/100"),
@@ -51,6 +79,23 @@ log = [
     env("e9", 9, "AuthorizeOutbox", outbox_id="out1", frame_id="p1", action="run-check"),
 ]
 
+risk_claim = RiskClaimRecord(
+    claim_id="q1",
+    risk_id="r1",
+    hypothesis_id="h1",
+    mode="fixed",
+    cert_id="c-risk",
+    eta="1/100",
+    event_id="F1",
+    standardized_event_id="F1",
+    route_witness=RiskRouteWitness(
+        accepted=True,
+        checker="example-risk-route-v1",
+        transcript_digest=digest_json({"checker": "example-risk-route-v1", "mode": "fixed"}),
+        route="fixed",
+    ),
+)
+
 request = GateRequest(
     gate_id="gate1",
     bundle_id="bundle1",
@@ -65,6 +110,8 @@ request = GateRequest(
     risk_cert_id="c-risk",
     source_time=9,
     commit_time=10,
+    risk_claim=risk_claim.to_json(),
+    risk_alpha="1/50",
 )
 
 gate = ExecutorGate()

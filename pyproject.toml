@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "problem-frame-gate"
-version = "0.3.0"
+version = "1.0.0"
 description = "Audit logs and action gates for safer AI agents."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,7 +23,7 @@ keywords = [
   "open-source",
 ]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: Apache Software License",
@@ -33,6 +33,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Security",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Typing :: Typed",
@@ -69,6 +70,7 @@ include = [
   "tests",
   "docs",
   "examples",
+  "scripts",
   "README.md",
   "LICENSE",
   "NOTICE",
@@ -97,7 +99,7 @@ strict = true
 packages = ["problem_frame_gate"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=problem_frame_gate --cov-report=term-missing --cov-report=xml --cov-fail-under=90"
+addopts = "--cov=problem_frame_gate --cov-report=term-missing --cov-report=xml --cov-fail-under=95"
 testpaths = ["tests"]
 
 [tool.bandit]

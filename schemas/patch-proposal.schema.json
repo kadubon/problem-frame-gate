@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://problem-frame-gate.local/schemas/patch-proposal.schema.json",
+  "title": "Problem Frame Gate Patch Proposal",
+  "type": "object",
+  "required": ["expected_source_digest", "append", "write_cover", "touch_matrix"],
+  "properties": {
+    "expected_source_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "append": {"type": "array", "items": {"type": "object"}},
+    "affected_invariants": {"type": "array", "items": {"type": "string"}},
+    "write_classes": {"type": "array", "items": {"$ref": "#/$defs/write_class"}},
+    "write_cover": {
+      "type": "object",
+      "required": ["classes", "covered_eids"],
+      "properties": {
+        "classes": {"type": "array", "items": {"$ref": "#/$defs/write_class"}},
+        "covered_eids": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "read_footprints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["invariant", "entries"],
+        "properties": {
+          "invariant": {"type": "string", "minLength": 1},
+          "entries": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "touch_matrix": {"type": "object", "additionalProperties": {"type": "string"}},
+    "transported_cells": {"type": "array", "items": {"type": "string"}},
+    "liveness_repairs": {"type": "array", "items": {"type": "string"}},
+    "transcript_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
+  },
+  "$defs": {
+    "write_class": {
+      "type": "object",
+      "required": ["name", "object_id"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "object_id": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

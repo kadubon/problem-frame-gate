@@ -1,12 +1,17 @@
 """Practical finite audit calculus for AI problem-frame activation."""
 
 from ._version import __version__
-from .certificates import CertificateFamily, all_certificates_live, check_certificate_live
+from .certificates import (
+    CertificateFamily,
+    all_certificates_live,
+    certificate_dependency_digest,
+    check_certificate_live,
+)
 from .digest import canonical_json_bytes, digest_json, digest_many
 from .fold import FoldKernel, FoldState, default_components
 from .formation import FormationProof, check_formation, check_well_audited
 from .gate import ExecutorGate, GateBundle, GateRecord, GateRequest
-from .join import JoinChecker, JoinProposal, union_join
+from .join import JoinChecker, JoinKey, JoinProposal, RepairWitness, union_join
 from .model import (
     AuditTranscript,
     DependencyRef,
@@ -19,7 +24,7 @@ from .model import (
     StrictManifest,
     VersionInterval,
 )
-from .patch import AffectedClauseSet, PatchChecker, PatchProposal, ReadFootprint, TouchMatrix, WriteClass
+from .patch import AffectedClauseSet, PatchChecker, PatchProposal, ReadFootprint, TouchMatrix, WriteClass, WriteCover
 from .records import (
     ReachabilityTranscript,
     ReplayCertificate,
@@ -34,6 +39,8 @@ from .result import CheckResult, Issue
 from .risk import (
     RiskClaimRecord,
     RiskLedgerSummary,
+    RiskMode,
+    RiskRouteWitness,
     check_risk_claims,
     check_risk_ledger,
     check_risk_spend_live,
@@ -62,15 +69,19 @@ __all__ = [
     "Horizon",
     "Issue",
     "JoinChecker",
+    "JoinKey",
     "JoinProposal",
     "OrderEdge",
     "PatchChecker",
     "PatchProposal",
     "ReachabilityTranscript",
     "ReadFootprint",
+    "RepairWitness",
     "ReplayCertificate",
     "RiskClaimRecord",
     "RiskLedgerSummary",
+    "RiskMode",
+    "RiskRouteWitness",
     "SensitiveDataIssue",
     "SourceCut",
     "Status",
@@ -80,10 +91,12 @@ __all__ = [
     "TransitionRecord",
     "VersionInterval",
     "WriteClass",
+    "WriteCover",
     "__version__",
     "all_certificates_live",
     "canonical_json_bytes",
     "canonical_order",
+    "certificate_dependency_digest",
     "check_certificate_live",
     "check_formation",
     "check_reachability",

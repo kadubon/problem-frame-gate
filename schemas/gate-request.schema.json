@@ -16,21 +16,84 @@
     "risk_mode",
     "risk_cert_id",
     "source_time",
-    "commit_time"
+    "commit_time",
+    "risk_claim",
+    "risk_alpha"
   ],
   "properties": {
-    "gate_id": {"type": "string"},
-    "bundle_id": {"type": "string"},
-    "frame_id": {"type": "string"},
-    "action": {"type": "string"},
-    "outbox_id": {"type": "string"},
-    "capability_id": {"type": "string"},
-    "lease_id": {"type": "string"},
-    "risk_id": {"type": "string"},
-    "hypothesis_id": {"type": "string"},
-    "risk_mode": {"type": "string"},
-    "risk_cert_id": {"type": "string"},
+    "gate_id": {"type": "string", "minLength": 1},
+    "bundle_id": {"type": "string", "minLength": 1},
+    "frame_id": {"type": "string", "minLength": 1},
+    "action": {"type": "string", "minLength": 1},
+    "outbox_id": {"type": "string", "minLength": 1},
+    "capability_id": {"type": "string", "minLength": 1},
+    "lease_id": {"type": "string", "minLength": 1},
+    "risk_id": {"type": "string", "minLength": 1},
+    "hypothesis_id": {"type": "string", "minLength": 1},
+    "risk_mode": {"enum": ["fixed", "selectedEvent", "conditionalSelective", "anytime"]},
+    "risk_cert_id": {"type": "string", "minLength": 1},
     "source_time": {"type": "integer"},
-    "commit_time": {"type": "integer"}
+    "commit_time": {"type": "integer"},
+    "executor_id": {"type": "string"},
+    "ledger_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "expected_source_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "required_certificate_ids": {"type": "array", "items": {"type": "string"}},
+    "risk_claim": {"$ref": "#/$defs/risk_claim"},
+    "risk_alpha": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(/[1-9][0-9]*)?$"},
+    "metadata": {"type": "object"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "risk_claim": {
+      "type": "object",
+      "required": [
+        "claim_id",
+        "risk_id",
+        "hypothesis_id",
+        "mode",
+        "cert_id",
+        "eta",
+        "event_id",
+        "standardized_event_id",
+        "route_witness",
+        "assumption"
+      ],
+      "properties": {
+        "claim_id": {"type": "string", "minLength": 1},
+        "risk_id": {"type": "string", "minLength": 1},
+        "hypothesis_id": {"type": "string", "minLength": 1},
+        "mode": {"enum": ["fixed", "selectedEvent", "conditionalSelective", "anytime"]},
+        "cert_id": {"type": "string", "minLength": 1},
+        "eta": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)(/[1-9][0-9]*)?$"},
+        "event_id": {"type": "string"},
+        "standardized_event_id": {"type": "string"},
+        "selection_event_id": {"type": ["string", "null"]},
+        "stopping_time_id": {"type": ["string", "null"]},
+        "selection_time": {"type": ["integer", "null"]},
+        "ledger_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+        "assumption": {"type": "string", "minLength": 1},
+        "route_witness": {
+          "type": "object",
+          "required": [
+            "accepted",
+            "checker",
+            "transcript_digest",
+            "route",
+            "spend_before_selection",
+            "assumption"
+          ],
+          "properties": {
+            "accepted": {"const": true},
+            "checker": {"type": "string", "minLength": 1},
+            "transcript_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "route": {"type": "string", "minLength": 1},
+            "spend_before_selection": {"type": "boolean"},
+            "assumption": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
   }
 }
