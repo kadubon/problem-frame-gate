@@ -49,6 +49,7 @@ Check an action gate and emit the atomic bundle:
 ```bash
 pfg validate-schema gate-request docs/examples/gate-request.json
 pfg check-gate --horizon docs/examples/horizon.json --bundle docs/examples/gate-request.json docs/examples/log.json
+pfg report --horizon docs/examples/horizon.json docs/examples/log.json
 ```
 
 The generated bundle contains exactly five protected rows:
@@ -141,6 +142,25 @@ bundle = gate.create_bundle(horizon, log, request)
 assert bundle.verify(horizon, log).ok
 ```
 
+## Durable Runtime Path
+
+Use the runtime helpers when an agent needs to commit a gate decision before any
+external tool call:
+
+```python
+from problem_frame_gate import GateCommitter, MemoryAppendOnlyStore, OutboxBroker
+
+store = MemoryAppendOnlyStore(log)
+commit = GateCommitter(store).commit_gate(horizon, request)
+assert commit.ok
+```
+
+`GateCommitter` only appends the accepted five-row gate bundle.  It never calls
+an actuator.  `OutboxBroker` is the separate component that dispatches only
+after a durable `OutboxClaim` and `DispatchStarted` row exist.  Production
+deployments can use `SQLiteAppendOnlyStore` or implement the `AppendOnlyStore`
+protocol with their own replicated storage.
+
 ## Security Boundary
 
 The library proves finite audit consistency.  It does not prove external truth,
@@ -150,7 +170,8 @@ effect.  Those are explicit assumptions in checker results.
 Strict certificates require a finite family-check record with a checker name,
 transcript digest, dependency digest, revocation frontier, and check time.
 Boolean certificate flags are treated as legacy assumptions and fail strict
-v1.0.0 checks.
+v1.1.0 checks.  Certificate issue rows can also carry signature fields; Python
+deployments may require and verify them with `SignatureRegistry`.
 
 There are two verification routes:
 
@@ -159,6 +180,9 @@ There are two verification routes:
 - Python deployments can register callable `CertificateFamily` and `RiskMode`
   checkers.  The verifier reuses those registries when replaying embedded
   `GateCheck` transcripts.
+- `production_profile()` supplies callable finite risk-route checkers and
+  rejects assumption-only statistical routes unless the deployment explicitly
+  declares that boundary.
 
 See `docs/quickstart.md`, `docs/schema.md`, `docs/theory-mapping.md`, and
 `docs/issue-codes.md` for operational use.

@@ -17,8 +17,14 @@ parsing prose messages.
 | `source-cut-digest` | Source cut digest does not match included rows. | Recompute the source cut from the exact prefix. |
 | `patch-affected-completeness` | A touched invariant was not listed for recheck. | Add the invariant to `affected_invariants` and provide a read/touch witness. |
 | `join-liveness-repair` | A branch conflict lacks a folded and rechecked repair witness. | Add repair rows and typed repair witnesses for the conflict key. |
+| `join-liveness-repair-witness` | A non-active frame join did not cite repair keys for live cells. | Add `capability:`, `outbox:`, `resource:`, and `risk:` liveness repair keys and rows. |
 | `reach-witness-payload` | Reachability transition is digest-only. | Include a typed witness payload for `patch`, `join`, `gate`, `abort`, or `failClosed`. |
 | `reach-transcript-digest` | Reachability witness replay does not match the transcript digest. | Recompute the transition witness with the same checker and manifest. |
+| `store-cas-conflict` | Durable store digest changed before append. | Re-read the snapshot and re-run the gate check. |
+| `store-duplicate-eid` | Append tried to reuse an envelope id. | Generate fresh envelope ids before committing. |
+| `gate-commit-source-digest` | Gate request does not bind the current durable snapshot. | Recreate the request from the current store snapshot. |
+| `certificate-signature-registry` | Signature fields exist or are required but no registry was supplied. | Provide a `SignatureRegistry` or disable mandatory signatures for that environment. |
+| `broker-fold` | Broker cannot fold the durable snapshot. | Stop dispatch and repair the audit log before retrying. |
 | `sensitive-payload` | Log payload contains secret-looking data or a local machine path. | Replace raw secrets and local paths with stable identifiers or digests. |
 
 Commercial deployments should treat every error issue as fail-closed. Warning

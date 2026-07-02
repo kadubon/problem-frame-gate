@@ -328,6 +328,7 @@ JOIN_PROPOSAL_SCHEMA: dict[str, Any] = {
         "repair_witnesses": {"type": "array", "items": {"$ref": "repair-witness"}},
         "affected_invariants": {"$ref": "string-array"},
         "repair_rechecks": {"$ref": "string-array"},
+        "liveness_repairs": {"$ref": "string-array"},
         "transcript_digest": {"type": ["string", "null"], "pattern": SHA256_PATTERN},
     },
     "additionalProperties": False,

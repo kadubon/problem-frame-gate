@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from itertools import pairwise
 from typing import TYPE_CHECKING
 
-from .digest import digest_json
+from .digest import digest_json, is_sha256_digest
 from .model import DEFAULT_GATE_BUNDLE_KINDS, DependencyRef, Envelope, EnvelopeClass, Horizon, OrderEdge
 from .result import CheckBuilder, CheckResult
 from .security import scan_for_sensitive_data
@@ -15,6 +15,7 @@ from .security import scan_for_sensitive_data
 if TYPE_CHECKING:
     from .certificates import CertificateFamily
     from .risk import RiskMode
+    from .signatures import SignatureRegistry
 
 
 def digest_log(envelopes: Iterable[Envelope]) -> str:
@@ -33,9 +34,13 @@ class EnvelopeVerifier:
         *,
         certificate_registry: Mapping[str, CertificateFamily] | None = None,
         risk_registry: Mapping[str, RiskMode] | None = None,
+        signature_registry: SignatureRegistry | None = None,
+        require_certificate_signatures: bool = False,
     ) -> None:
         self.certificate_registry = certificate_registry
         self.risk_registry = risk_registry
+        self.signature_registry = signature_registry
+        self.require_certificate_signatures = require_certificate_signatures
 
     def verify(self, horizon: Horizon, envelopes: Sequence[Envelope]) -> CheckResult:
         builder = CheckBuilder(footprint=set(self.footprint))
@@ -70,8 +75,12 @@ class EnvelopeVerifier:
 
         id_map = {env.eid: env for env in envelopes}
         env_by_event: dict[str, list[Envelope]] = defaultdict(list)
+        env_by_event_slot: dict[tuple[str | None, str | None], list[str]] = defaultdict(list)
         for env in envelopes:
             env_by_event[env.event].append(env)
+            env_by_event_slot[(env.event, env.slot)].append(env.eid)
+            env_by_event_slot[(env.event, None)].append(env.eid)
+            env_by_event_slot[(None, env.slot)].append(env.eid)
 
         successors: dict[str, set[str]] = {env.eid: set() for env in envelopes}
         indegree: dict[str, int] = {env.eid: 0 for env in envelopes}
@@ -89,7 +98,7 @@ class EnvelopeVerifier:
 
         for env in envelopes:
             for dep in env.dependencies:
-                for dep_eid in _matching_dependency_eids(dep, envelopes):
+                for dep_eid in _matching_dependency_eids(dep, envelopes, env_by_event_slot):
                     if dep_eid in id_map:
                         add_edge(dep_eid, env.eid)
 
@@ -243,9 +252,10 @@ class EnvelopeVerifier:
         id_map: Mapping[str, Envelope],
         builder: CheckBuilder,
     ) -> None:
+        by_event_slot = _dependency_index(envelopes)
         for env in envelopes:
             for dep in env.dependencies:
-                matches = _matching_dependency_eids(dep, envelopes)
+                matches = _matching_dependency_eids(dep, envelopes, by_event_slot)
                 if dep.eid is not None and dep.eid not in id_map:
                     builder.error("missing-dependency", "dependency envelope id is absent", location=env.eid)
                 elif dep.eid is None and not matches:
@@ -584,10 +594,15 @@ class EnvelopeVerifier:
         builder: CheckBuilder,
     ) -> None:
         source_time = request.get("source_time")
-        if not isinstance(source_time, int):
-            builder.error("gate-source-cut", "gate request source_time must be an integer", location=group)
+        commit_time = request.get("commit_time")
+        if not isinstance(source_time, int) or not isinstance(commit_time, int):
+            builder.error(
+                "gate-source-cut",
+                "gate request source_time and commit_time must be integers",
+                location=group,
+            )
             return
-        source_universe = tuple(env for env in envelopes if env.commit_group != group)
+        source_universe = tuple(env for env in envelopes if env.commit_group != group and env.commit_time < commit_time)
         expected_included = tuple(sorted(env.eid for env in source_universe if env.commit_time <= source_time))
         expected_frontier = tuple(sorted(env.eid for env in source_universe if env.commit_time > source_time))
         actual_included = _string_tuple(source_cut.get("included_eids"))
@@ -696,7 +711,7 @@ class EnvelopeVerifier:
                 location=gate.eid,
             )
         transcript_digest = gate.payload.get("transcript_digest")
-        if gate_record.get("transcript_digest") != transcript_digest or not _sha256_text(transcript_digest):
+        if gate_record.get("transcript_digest") != transcript_digest or not is_sha256_digest(transcript_digest):
             builder.error(
                 "gate-record-transcript",
                 "gate record must bind the GateCheck transcript digest",
@@ -735,6 +750,8 @@ class EnvelopeVerifier:
         semantic = ExecutorGate(
             certificate_registry=self.certificate_registry,
             risk_registry=self.risk_registry,
+            signature_registry=self.signature_registry,
+            require_certificate_signatures=self.require_certificate_signatures,
         ).check(horizon, source_universe, request_obj)
         for issue in semantic.issues:
             if issue.severity == "error":
@@ -768,20 +785,39 @@ def legal_log(
     *,
     certificate_registry: Mapping[str, CertificateFamily] | None = None,
     risk_registry: Mapping[str, RiskMode] | None = None,
+    signature_registry: SignatureRegistry | None = None,
+    require_certificate_signatures: bool = False,
 ) -> CheckResult:
-    return EnvelopeVerifier(certificate_registry=certificate_registry, risk_registry=risk_registry).verify(
-        horizon,
-        envelopes,
-    )
+    return EnvelopeVerifier(
+        certificate_registry=certificate_registry,
+        risk_registry=risk_registry,
+        signature_registry=signature_registry,
+        require_certificate_signatures=require_certificate_signatures,
+    ).verify(horizon, envelopes)
 
 
 def canonical_order(horizon: Horizon, envelopes: Sequence[Envelope]) -> tuple[Envelope, ...]:
     return EnvelopeVerifier().canonical_order(horizon, envelopes)
 
 
-def _matching_dependency_eids(dep: DependencyRef, envelopes: Sequence[Envelope]) -> tuple[str, ...]:
+def _dependency_index(envelopes: Sequence[Envelope]) -> Mapping[tuple[str | None, str | None], tuple[str, ...]]:
+    index: dict[tuple[str | None, str | None], list[str]] = defaultdict(list)
+    for env in envelopes:
+        index[(env.event, env.slot)].append(env.eid)
+        index[(env.event, None)].append(env.eid)
+        index[(None, env.slot)].append(env.eid)
+    return {key: tuple(value) for key, value in index.items()}
+
+
+def _matching_dependency_eids(
+    dep: DependencyRef,
+    envelopes: Sequence[Envelope],
+    index: Mapping[tuple[str | None, str | None], Sequence[str]] | None = None,
+) -> tuple[str, ...]:
     if dep.eid is not None:
         return (dep.eid,)
+    if index is not None:
+        return tuple(index.get((dep.event, dep.slot), ()))
     matches = []
     for env in envelopes:
         if dep.event is not None and env.event != dep.event:
@@ -827,7 +863,3 @@ def _string_tuple(value: object) -> tuple[str, ...]:
     if not isinstance(value, list | tuple):
         return ()
     return tuple(str(item) for item in value if isinstance(item, str))
-
-
-def _sha256_text(value: object) -> bool:
-    return isinstance(value, str) and value.startswith("sha256:") and len(value) > len("sha256:")

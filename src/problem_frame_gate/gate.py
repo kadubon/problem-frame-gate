@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .certificates import CertificateFamily, all_certificates_live
+from .clock import ClockWatermarkProvider
 from .digest import digest_json
 from .fold import FoldKernel, FoldState
 from .formation import check_well_audited
@@ -14,6 +15,7 @@ from .model import Envelope, EnvelopeClass, Horizon, Status
 from .records import SourceCut
 from .result import CheckBuilder, CheckResult
 from .risk import RiskClaimRecord, RiskMode, check_risk_claims, check_risk_spend_live
+from .signatures import SignatureRegistry
 from .verifier import EnvelopeVerifier, digest_log
 
 
@@ -225,10 +227,14 @@ class GateBundle:
         *,
         certificate_registry: Mapping[str, CertificateFamily] | None = None,
         risk_registry: Mapping[str, RiskMode] | None = None,
+        signature_registry: SignatureRegistry | None = None,
+        require_certificate_signatures: bool = False,
     ) -> CheckResult:
         return EnvelopeVerifier(
             certificate_registry=certificate_registry,
             risk_registry=risk_registry,
+            signature_registry=signature_registry,
+            require_certificate_signatures=require_certificate_signatures,
         ).verify(horizon, tuple(source) + self.envelopes)
 
 
@@ -252,10 +258,14 @@ class ExecutorGate:
         *,
         certificate_registry: Mapping[str, CertificateFamily] | None = None,
         risk_registry: Mapping[str, RiskMode] | None = None,
+        signature_registry: SignatureRegistry | None = None,
+        require_certificate_signatures: bool = False,
     ) -> None:
         self.fold_kernel = fold_kernel or FoldKernel()
         self.certificate_registry = certificate_registry
         self.risk_registry = risk_registry
+        self.signature_registry = signature_registry
+        self.require_certificate_signatures = require_certificate_signatures
 
     def check(self, horizon: Horizon, envelopes: Sequence[Envelope], request: GateRequest) -> CheckResult:
         builder = CheckBuilder(footprint=set(self.footprint))
@@ -285,6 +295,8 @@ class ExecutorGate:
             request.source_time,
             horizon=horizon,
             registry=self.certificate_registry,
+            signature_registry=self.signature_registry,
+            require_signature=self.require_certificate_signatures,
         )
         risk = check_risk_spend_live(
             state,
@@ -296,6 +308,8 @@ class ExecutorGate:
             ledger_digest=request.ledger_digest,
             horizon=horizon,
             certificate_registry=self.certificate_registry,
+            signature_registry=self.signature_registry,
+            require_certificate_signature=self.require_certificate_signatures,
         )
         risk_claim = self._check_risk_claim(state, request, horizon)
         return builder_result.merge(check_well_audited(state), semantic, certificates, risk, risk_claim)
@@ -309,6 +323,7 @@ class ExecutorGate:
         writer: str = "executor-gate",
         owner: str = "executor-gate",
         version: int = 1,
+        watermark_provider: ClockWatermarkProvider | None = None,
     ) -> GateBundle:
         result = self.check(horizon, envelopes, request)
         if not result.ok:
@@ -319,14 +334,25 @@ class ExecutorGate:
         source_digest = digest_log(source_prefix)
         transcript_digest = digest_json(result.to_json())
         record = GateRecord.from_request(request, source_digest=source_digest, transcript_digest=transcript_digest)
+        watermark = None
+        clock_rows: tuple[str, ...] = (f"source_time:{request.source_time}", f"commit_time:{request.commit_time}")
+        watermark_rows: tuple[str, ...] = (f"source_digest:{source_digest}",)
+        if watermark_provider is not None:
+            watermark = watermark_provider.watermark(
+                source_time=request.source_time,
+                commit_time=request.commit_time,
+                source_digest=source_digest,
+            )
+            clock_rows = watermark.clock_rows()
+            watermark_rows = watermark.watermark_rows()
         source_cut = SourceCut(
             cut_id=f"{request.gate_id}:source-cut",
             source_time=request.source_time,
             included_eids=tuple(env.eid for env in source_prefix),
             excluded_frontier_eids=tuple(env.eid for env in envelopes if env.commit_time > request.source_time),
             digest=source_digest,
-            clock_rows=(f"source_time:{request.source_time}", f"commit_time:{request.commit_time}"),
-            watermark_rows=(f"source_digest:{source_digest}",),
+            clock_rows=clock_rows,
+            watermark_rows=watermark_rows,
         )
         gate_record_digest = digest_json(record.to_json())
         payloads: tuple[Mapping[str, Any], ...] = (
@@ -342,6 +368,7 @@ class ExecutorGate:
                 "gate_record": record.to_json(),
                 "gate_record_digest": gate_record_digest,
                 "transcript_digest": transcript_digest,
+                "clock_watermark": watermark.to_json() if watermark is not None else None,
             },
             {
                 "kind": "OutboxClaim",
@@ -394,6 +421,8 @@ class ExecutorGate:
             envelopes,
             certificate_registry=self.certificate_registry,
             risk_registry=self.risk_registry,
+            signature_registry=self.signature_registry,
+            require_certificate_signatures=self.require_certificate_signatures,
         )
         if not verify.ok:
             messages = "; ".join(issue.message for issue in verify.issues if issue.severity == "error")
@@ -528,6 +557,8 @@ class ExecutorGate:
             horizon=horizon,
             registry=self.risk_registry,
             certificate_registry=self.certificate_registry,
+            signature_registry=self.signature_registry,
+            require_certificate_signature=self.require_certificate_signatures,
         )
         return builder.result().merge(claim_result)
 

@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from .digest import digest_json
+from .digest import digest_json, is_sha256_digest
 from .model import Envelope, Horizon
 from .result import CheckBuilder, CheckResult
 from .verifier import EnvelopeVerifier, canonical_order, digest_log
@@ -282,9 +282,9 @@ def check_reachability(
     allowed = {"patch", "join", "gate", "abort", "failClosed"}
     for index, transition in enumerate(transcript.transitions):
         if (
-            not _sha256_text(transition.source_digest)
-            or not _sha256_text(transition.target_digest)
-            or not _sha256_text(transition.transcript_digest)
+            not is_sha256_digest(transition.source_digest)
+            or not is_sha256_digest(transition.target_digest)
+            or not is_sha256_digest(transition.transcript_digest)
         ):
             builder.error(
                 "reach-record",
@@ -297,7 +297,7 @@ def check_reachability(
                 "transition kind must be patch, join, gate, abort, or failClosed",
                 details={"index": index, "kind": transition.kind},
             )
-        if transition.witness_kind != transition.kind or not _sha256_text(transition.witness_digest):
+        if transition.witness_kind != transition.kind or not is_sha256_digest(transition.witness_digest):
             builder.error(
                 "reach-witness",
                 "transition must bind a concrete checker witness for its kind",
@@ -557,10 +557,6 @@ def _witness_envelopes(
             details={"index": index, "field": field},
         )
         return None
-
-
-def _sha256_text(value: str) -> bool:
-    return isinstance(value, str) and value.startswith("sha256:") and len(value) > len("sha256:")
 
 
 def _mapping(value: object) -> Mapping[str, Any]:

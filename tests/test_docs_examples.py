@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import runpy
 from pathlib import Path
 
 from problem_frame_gate.cli import main
@@ -26,3 +27,17 @@ def test_quickstart_json_examples_execute() -> None:
     assert main(["validate-schema", "gate-request", request]) == 0
     assert main(["verify-log", "--horizon", horizon, log]) == 0
     assert main(["check-gate", "--horizon", horizon, "--bundle", request, log]) == 0
+    assert main(["report", "--horizon", horizon, log]) == 0
+
+
+def test_runtime_examples_execute() -> None:
+    for path in (
+        "examples/memory_gate_commit.py",
+        "examples/sqlite_gate_commit.py",
+        "examples/broker_fake_dispatcher.py",
+        "examples/production_profile_rejects_assumption.py",
+    ):
+        try:
+            runpy.run_path(path, run_name="__main__")
+        except SystemExit as exc:
+            assert exc.code == 0

@@ -6,10 +6,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from .digest import digest_json
+from .digest import digest_json, is_sha256_digest
 from .fold import FoldState
 from .model import Horizon
 from .result import CheckBuilder, CheckResult
+from .signatures import SignatureRegistry
 
 CertificateChecker = Callable[[Mapping[str, Any], FoldState, int, Horizon | None], CheckResult]
 
@@ -57,6 +58,8 @@ def check_certificate_live(
     *,
     horizon: Horizon | None = None,
     registry: Mapping[str, CertificateFamily] | None = None,
+    signature_registry: SignatureRegistry | None = None,
+    require_signature: bool = False,
 ) -> CheckResult:
     """Check that a certificate was issued and not revoked or expired at a time."""
 
@@ -150,7 +153,8 @@ def check_certificate_live(
             builder.add_assumption(assumption)
     if cert.get("assumption"):
         builder.add_assumption(str(cert["assumption"]))
-    return builder.result()
+    signature_result = _check_signature(cert, signature_registry, require_signature)
+    return builder.result().merge(signature_result)
 
 
 def all_certificates_live(
@@ -160,10 +164,22 @@ def all_certificates_live(
     *,
     horizon: Horizon | None = None,
     registry: Mapping[str, CertificateFamily] | None = None,
+    signature_registry: SignatureRegistry | None = None,
+    require_signature: bool = False,
 ) -> CheckResult:
     result = CheckResult.success(footprint={"IssuerAuthentication", "RevocationOracle", "ClockWatermark"})
     for cert_id in cert_ids:
-        result = result.merge(check_certificate_live(state, cert_id, at_time, horizon=horizon, registry=registry))
+        result = result.merge(
+            check_certificate_live(
+                state,
+                cert_id,
+                at_time,
+                horizon=horizon,
+                registry=registry,
+                signature_registry=signature_registry,
+                require_signature=require_signature,
+            )
+        )
     return result
 
 
@@ -207,7 +223,7 @@ def _check_family_record(
     if not isinstance(checker, str) or not checker:
         builder.error("certificate-family-checker", "family-check record must name its checker", location=cert_id)
     transcript_digest = family_check.get("transcript_digest")
-    if not _sha256_text(transcript_digest):
+    if not is_sha256_digest(transcript_digest):
         builder.error(
             "certificate-family-transcript",
             "family-check record must bind a SHA-256 transcript digest",
@@ -253,10 +269,6 @@ def _check_family_record(
         builder.add_assumption(assumption)
 
 
-def _sha256_text(value: Any) -> bool:
-    return isinstance(value, str) and value.startswith("sha256:") and len(value) > len("sha256:")
-
-
 def _family_assumption(certificate: Mapping[str, Any]) -> str:
     family_check = certificate.get("family_check")
     if isinstance(family_check, Mapping) and isinstance(family_check.get("assumption"), str):
@@ -264,3 +276,25 @@ def _family_assumption(certificate: Mapping[str, Any]) -> str:
     if isinstance(certificate.get("assumption"), str):
         return str(certificate["assumption"])
     return ""
+
+
+def _check_signature(
+    certificate: Mapping[str, Any],
+    signature_registry: SignatureRegistry | None,
+    require_signature: bool,
+) -> CheckResult:
+    signature_fields_present = any(
+        bool(certificate.get(field))
+        for field in ("key_id", "signature_algorithm", "signed_payload_digest", "signature")
+    )
+    if not require_signature and not signature_fields_present:
+        return CheckResult.success(footprint={"SignatureRegistry"})
+    if signature_registry is None:
+        builder = CheckBuilder(footprint={"SignatureRegistry"})
+        builder.error(
+            "certificate-signature-registry",
+            "certificate signature verification requires a signature registry",
+            location=str(certificate.get("payload_eid", certificate.get("subject", ""))),
+        )
+        return builder.result()
+    return signature_registry.verify(certificate, required=require_signature)

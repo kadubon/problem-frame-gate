@@ -39,3 +39,14 @@ assert issues
 The library can prove that an action claim came from a checked gate bundle.  It
 does not prove that the actuator or physical environment obeyed the command.
 Deployments should log actuator acceptance and effect observation separately.
+
+## Registry And Assumption Routes
+
+JSON-only workflows rely on manifest-declared assumptions such as
+`CertificateFamilyChecker` and `StatisticalModel`.  Python deployments can reduce
+that assumption footprint by passing callable `CertificateFamily`, `RiskMode`,
+and `SignatureRegistry` entries to the gate/verifier path.
+
+`production_profile()` deliberately omits the statistical assumption and provides
+callable finite risk-route checkers.  It verifies route structure and timing; it
+still does not prove that the external statistical model is true.

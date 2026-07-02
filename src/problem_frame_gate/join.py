@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .digest import digest_json
+from .digest import digest_json, is_sha256_digest
 from .fold import FoldKernel, FoldState
 from .model import Envelope, Horizon
 from .result import CheckBuilder, CheckResult
@@ -61,6 +61,7 @@ class JoinProposal:
     repair_witnesses: tuple[RepairWitness, ...] = ()
     affected_invariants: tuple[str, ...] = ()
     repair_rechecks: tuple[str, ...] = ()
+    liveness_repairs: tuple[str, ...] = ()
     transcript_digest: str | None = None
 
     def to_json(self) -> dict[str, Any]:
@@ -73,6 +74,7 @@ class JoinProposal:
             "repair_witnesses": [witness.to_json() for witness in self.repair_witnesses],
             "affected_invariants": list(self.affected_invariants),
             "repair_rechecks": list(self.repair_rechecks),
+            "liveness_repairs": list(self.liveness_repairs),
             "transcript_digest": self.transcript_digest,
         }
 
@@ -92,6 +94,7 @@ class JoinProposal:
             ),
             affected_invariants=tuple(str(item) for item in _sequence(value.get("affected_invariants", ()))),
             repair_rechecks=tuple(str(item) for item in _sequence(value.get("repair_rechecks", ()))),
+            liveness_repairs=tuple(str(item) for item in _sequence(value.get("liveness_repairs", ()))),
             transcript_digest=str(value["transcript_digest"]) if value.get("transcript_digest") is not None else None,
         )
 
@@ -169,7 +172,7 @@ class JoinChecker:
             witness = witnesses.get(repair_id)
             if witness is None:
                 builder.error("join-repair-witness", "repair row must carry a typed repair witness", location=repair_id)
-            elif not witness.rechecked or not _sha256_text(witness.transcript_digest):
+            elif not witness.rechecked or not is_sha256_digest(witness.transcript_digest):
                 builder.error(
                     "join-repair-witness",
                     "repair witness must be folded and rechecked with a transcript digest",
@@ -226,7 +229,7 @@ class JoinChecker:
                     details={"expected": expected_eids, "actual": list(join_key.branch_eids)},
                 )
             witness = witnesses.get(key)
-            if witness is None or not witness.rechecked or not _sha256_text(witness.transcript_digest):
+            if witness is None or not witness.rechecked or not is_sha256_digest(witness.transcript_digest):
                 builder.error(
                     "join-liveness-repair",
                     "branch conflict must carry a folded and rechecked repair witness",
@@ -241,9 +244,11 @@ class JoinChecker:
             for frame_id, record in frames.items()
             if record.get("status") in {"suspended", "invalid", "withdrawn"}
         }
+        liveness_repairs = set(proposal.liveness_repairs)
         for frame_id in non_active:
             for cap_id, cap in components.get("capabilities", {}).items():
                 if cap.get("frame_id") == frame_id and cap.get("status") == "unused":
+                    _require_liveness_repair("capability", cap_id, liveness_repairs, builder)
                     builder.error(
                         "join-frame-invalidates-capability",
                         "join leaves a live cap for non-active frame",
@@ -251,10 +256,27 @@ class JoinChecker:
                     )
             for outbox_id, outbox in components.get("outboxes", {}).items():
                 if outbox.get("frame_id") == frame_id and outbox.get("status") == "authorized":
+                    _require_liveness_repair("outbox", outbox_id, liveness_repairs, builder)
                     builder.error(
                         "join-frame-invalidates-outbox",
                         "join leaves an authorized outbox for non-active frame",
                         location=outbox_id,
+                    )
+            for lease_id, resource in components.get("resources", {}).items():
+                if resource.get("frame_id") == frame_id and resource.get("status") == "leased":
+                    _require_liveness_repair("resource", lease_id, liveness_repairs, builder)
+                    builder.error(
+                        "join-frame-invalidates-resource",
+                        "join leaves a live resource lease for non-active frame",
+                        location=lease_id,
+                    )
+            for risk_id, spend in components.get("risk", {}).get("spends", {}).items():
+                if spend.get("frame_id") == frame_id and spend.get("closed_at") is None:
+                    _require_liveness_repair("risk", risk_id, liveness_repairs, builder)
+                    builder.error(
+                        "join-frame-invalidates-risk",
+                        "join leaves an open risk spend for non-active frame",
+                        location=risk_id,
                     )
 
 
@@ -293,8 +315,20 @@ def _linear_cell_key(env: Envelope) -> str:
     return ""
 
 
-def _sha256_text(value: str) -> bool:
-    return isinstance(value, str) and value.startswith("sha256:") and len(value) > len("sha256:")
+def _require_liveness_repair(
+    kind: str,
+    object_id: str,
+    repairs: set[str],
+    builder: CheckBuilder,
+) -> None:
+    repair_key = f"{kind}:{object_id}"
+    if repair_key not in repairs:
+        builder.error(
+            "join-liveness-repair-witness",
+            "non-active frame join must cite the liveness repair key",
+            location=object_id,
+            details={"repair": repair_key},
+        )
 
 
 def _mapping(value: object) -> Mapping[str, Any]:

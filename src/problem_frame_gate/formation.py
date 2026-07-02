@@ -44,6 +44,74 @@ class FormationProof:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class FormationBuildResult:
+    """Formation proof builder output."""
+
+    result: CheckResult
+    proof: FormationProof | None
+
+    @property
+    def ok(self) -> bool:
+        return self.result.ok and self.proof is not None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "result": self.result.to_json(),
+            "proof": self.proof.to_json() if self.proof is not None else None,
+        }
+
+
+class FormationProofBuilder:
+    """Build a finite formation proof from already-folded evidence."""
+
+    def build(
+        self,
+        frame: Frame,
+        state: FoldState,
+        *,
+        seed: str = "standard",
+        certificate_ids: tuple[str, ...] = (),
+        metadata: Mapping[str, Any] | None = None,
+    ) -> FormationBuildResult:
+        builder = CheckBuilder(footprint={"FormationProofBuilder", "FoldKernel"})
+        evidence = state.component("evidence")
+        source_evidence: list[str] = []
+        for evidence_id in frame.evidence_ids:
+            if evidence_id not in evidence:
+                builder.error(
+                    "formation-builder-evidence",
+                    "frame evidence is absent from folded state",
+                    location=evidence_id,
+                )
+            else:
+                source_evidence.append(evidence_id)
+        if not frame.goal.strip():
+            builder.error("formation-builder-goal", "frame goal is empty", location=frame.frame_id)
+        if not frame.actions:
+            builder.error("formation-builder-action", "frame action set is empty", location=frame.frame_id)
+        if not frame.acceptance:
+            builder.error(
+                "formation-builder-acceptance",
+                "frame acceptance criteria are empty",
+                location=frame.frame_id,
+            )
+        proof = FormationProof(
+            frame_id=frame.frame_id,
+            source_evidence=tuple(source_evidence),
+            goal_witnesses=(f"goal:{frame.frame_id}",) if frame.goal.strip() else (),
+            action_witnesses=tuple(f"action:{action}" for action in frame.actions),
+            acceptance_witnesses=tuple(f"acceptance:{item}" for item in frame.acceptance),
+            risk_witnesses=tuple(frame.risk_ids),
+            obligation_witnesses=tuple(frame.obligations),
+            seed=seed,
+            certificate_ids=certificate_ids,
+            metadata=dict(metadata or {}),
+        )
+        return FormationBuildResult(builder.result(), proof)
+
+
 def check_formation(
     state: FoldState, proof: FormationProof, *, at_time: int, horizon: Horizon | None = None
 ) -> CheckResult:

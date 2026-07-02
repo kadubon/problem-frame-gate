@@ -34,6 +34,7 @@ Use the complete examples first:
 pfg validate-schema horizon docs/examples/horizon.json
 pfg validate-schema log docs/examples/log.json
 pfg validate-schema gate-request docs/examples/gate-request.json
+pfg report --horizon docs/examples/horizon.json docs/examples/log.json
 ```
 
 Strict certificate rows should use a finite `family_check` object:
@@ -56,6 +57,11 @@ strict v1 checks.
 Gate requests must carry an accepted `risk_claim` with a finite route witness.
 The checker does not prove the statistical model itself; the manifest must name
 that assumption, or the deployment must register a concrete checker.
+
+Join proposals can include `liveness_repairs` such as `capability:cap1`,
+`outbox:out1`, `resource:lease1`, and `risk:risk1`.  These keys are required
+when a join makes a frame non-active while live linear cells would otherwise
+remain.
 
 Digest strings use `sha256:` followed by 64 lowercase hexadecimal characters.
 Risk spend and alpha values use finite fraction strings such as `0`, `1/100`,

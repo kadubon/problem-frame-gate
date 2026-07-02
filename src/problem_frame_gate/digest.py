@@ -10,10 +10,14 @@ import dataclasses
 import hashlib
 import json
 import math
+import re
 from collections.abc import Iterable, Mapping
 from enum import Enum
 from fractions import Fraction
 from typing import Any
+
+SHA256_DIGEST_PATTERN = r"^sha256:[0-9a-f]{64}$"
+SHA256_DIGEST_RE = re.compile(SHA256_DIGEST_PATTERN)
 
 
 def normalize_json(value: Any) -> Any:
@@ -67,3 +71,9 @@ def digest_many(values: Iterable[Any], *, algorithm: str = "sha256") -> str:
     """Digest a finite sequence as one canonical JSON array."""
 
     return digest_json(list(values), algorithm=algorithm)
+
+
+def is_sha256_digest(value: object) -> bool:
+    """Return whether *value* is a canonical project SHA-256 digest string."""
+
+    return isinstance(value, str) and SHA256_DIGEST_RE.fullmatch(value) is not None

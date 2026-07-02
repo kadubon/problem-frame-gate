@@ -37,6 +37,7 @@
     },
     "affected_invariants": {"type": "array", "items": {"type": "string"}},
     "repair_rechecks": {"type": "array", "items": {"type": "string"}},
+    "liveness_repairs": {"type": "array", "items": {"type": "string"}},
     "transcript_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
   },
   "additionalProperties": false

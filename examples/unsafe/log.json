@@ -1,0 +1,19 @@
+[
+  {
+    "eid": "fake-claim",
+    "event": "fake-claim",
+    "slot": "0",
+    "commit": 1,
+    "writer": "agent",
+    "owner": "agent",
+    "version": 1,
+    "class": "normal",
+    "payload": {
+      "kind": "OutboxClaim",
+      "outbox_id": "out1",
+      "frame_id": "p1",
+      "action": "send-email",
+      "gate_id": "fake"
+    }
+  }
+]

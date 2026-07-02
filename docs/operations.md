@@ -42,3 +42,21 @@ still needs:
 For v1.x, avoid changing existing field names or checker issue codes unless the
 change closes a safety hole.  Add new optional fields before making a required
 field mandatory.
+
+## Durable Gate Commit
+
+Use `GateCommitter` with an `AppendOnlyStore` implementation when a process must
+decide and persist an action gate.  The committer:
+
+- reads one store snapshot;
+- checks the gate request against that snapshot;
+- creates the five-row gate bundle;
+- performs one compare-and-append;
+- never calls an external actuator.
+
+`MemoryAppendOnlyStore` is for tests and embedded agents.  `SQLiteAppendOnlyStore`
+uses stdlib SQLite and is suitable for local durable runs.  Distributed systems
+should implement `AppendOnlyStore` over their own replicated log.
+
+Use `OutboxBroker` as a separate process for dispatch.  It dispatches only after
+`OutboxClaim` and `DispatchStarted` are durably appended.

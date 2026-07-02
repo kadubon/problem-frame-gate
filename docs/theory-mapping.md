@@ -21,6 +21,8 @@ validity unless a deployment adds those assumptions and certificates.
 | capability/resource/outbox folds | linear authority state | `fold` default components |
 | risk ledger | finite reserve/spend/close accounting | `risk` |
 | executor gate | before-action authorization predicate and atomic bundle | `gate.ExecutorGate`, `gate.GateBundle` |
+| durable append | compare-and-append audit storage | `storage`, `runtime.GateCommitter` |
+| dispatch boundary | post-claim outbox dispatcher | `broker.OutboxBroker` |
 | patch preservation | footprint/touch/affected-clause checking | `patch.PatchChecker` |
 | join preservation | ancestor/repair/recheck checking | `join.JoinChecker` |
 
@@ -87,7 +89,10 @@ Domain checks should be written as small invariant functions passed to
 | Source cut | included set, excluded frontier, dependency closure, commit-group closure, digest equality | trustworthy storage clock |
 | Gate bundle | five-row order, commit group, tuple equality, source cut, gate record, transcript digest, close row | real actuator effect |
 | Certificate | issuer table, issue row, expiry, revocation, dependency digest, source availability, family-check record | real issuer authentication and key custody |
-| Risk | reserve before spend, single spend, close state, four route shapes, route witness, finite alpha bound | statistical model validity |
+| Certificate signature | optional registered verifier for issue-row signature fields | cryptographic library choice and key custody |
+| Risk | reserve before spend, single spend, close state, four route shapes, route witness, finite alpha bound, optional standard route registry | statistical model validity |
+| Durable commit | CAS append, duplicate id rejection, full legal-log replay after append | replicated storage durability and backup policy |
+| Broker dispatch | dispatch only after durable claim and dispatch-start rows | actuator effect, retries, and receipt monitoring |
 | Patch | append-only ids, write universe, touch/non-touch matrix, affected completeness, transported cells, liveness repairs | domain invariant correctness |
 | Join | common ancestor, conflicting envelope ids, escrow conflict keys, repair witnesses, repair rechecks, liveness repair | semantic merge policy chosen by deployment |
 | Reachability | transition kind, digest chain, typed witness payload, patch/join/gate checker replay, abort/fail-closed row class | the external transition premise itself |
@@ -98,6 +103,7 @@ Domain checks should be written as small invariant functions passed to
 | --- | --- | --- |
 | Certificate family | issue row shape, dependency digest, source availability, revocation frontier, optional callable registry checker | issuer identity, key custody, external source truth |
 | Risk route | finite route witness shape, spend-before-selection, alpha accounting, optional callable registry checker | statistical model validity |
+| Signature | registered verifier result for issuer/key/algorithm tuple | external key custody and cryptographic implementation |
 | Gate | source fold, active frame, capability, resource, outbox, live certificate, live risk spend, bundle transcript | actuator effect after dispatch |
 | Patch | source digest, append-only ids, write cover, touch matrix, transported cells, liveness repair | correctness of domain invariant functions |
 | Join | common ancestor, conflict keys, repair witnesses, repair rechecks | semantic merge policy selected by the deployment |
@@ -107,8 +113,8 @@ Domain checks should be written as small invariant functions passed to
 
 | Claim area | Implemented by this package | Required external control |
 | --- | --- | --- |
-| Audit-log legality | Finite schema, authority, capacity, dependency, version, and bundle checks | Durable append-only storage and backup policy |
-| Action authorization | Five-row executor gate bundle and replayable source digest | Tool sandbox, actuator policy, and human or service-level approval where required |
+| Audit-log legality | Finite schema, authority, capacity, dependency, version, bundle checks, optional CAS store | Backup policy and replicated durability beyond local SQLite |
+| Action authorization | Five-row executor gate bundle, replayable source digest, durable commit helper | Tool sandbox, actuator policy, and human or service-level approval where required |
 | Certificate liveness | Issued, unrevoked, unexpired, source-linked certificate records | Real issuer authentication and key management |
 | Risk accounting | Finite reserve/spend/close ledger and route checks | Statistical model validation and monitoring |
 | Patch and join preservation | Footprint, touch matrix, affected clause, ancestor, and repair checks | Domain invariants supplied by the deployment |

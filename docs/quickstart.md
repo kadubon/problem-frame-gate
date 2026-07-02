@@ -28,9 +28,12 @@ the atomic five-row bundle:
 ```bash
 pfg validate-schema gate-request docs/examples/gate-request.json
 pfg check-gate --horizon docs/examples/horizon.json --bundle docs/examples/gate-request.json docs/examples/log.json
+pfg report --horizon docs/examples/horizon.json docs/examples/log.json
 ```
 
-Only append and dispatch the returned five-row bundle after `ok` is true.
+Only append the returned five-row bundle after `ok` is true.  Dispatch should be
+separate: use `GateCommitter` to atomically append the bundle, then use
+`OutboxBroker` to call the actuator only after the durable `OutboxClaim` exists.
 
 The minimal log contains:
 
@@ -57,6 +60,18 @@ The JSON files use the assumption route: the manifest declares
 witness names the assumption it relies on.  Python deployments that need
 stronger local guarantees can register callable certificate-family and risk-mode
 checkers; legal-log replay then uses the same registries.
+
+The production profile route is stricter:
+
+```python
+from problem_frame_gate import ExecutorGate, production_profile
+
+profile = production_profile("email-agent")
+gate = ExecutorGate(risk_registry=profile.risk_registry)
+```
+
+This route rejects assumption-only statistical risk witnesses unless the
+deployment explicitly declares that assumption boundary.
 
 For local development, use:
 

@@ -1,0 +1,33 @@
+{
+  "strict": true,
+  "events": [],
+  "causal_order": [],
+  "availability_order": [],
+  "audit_order": [],
+  "capacities": {"normal": 100, "abort": 10, "failClosed": 10},
+  "writer_authority": {
+    "*": ["agent", "executor-gate"],
+    "GateCheck": ["executor-gate"],
+    "OutboxClaim": ["executor-gate"],
+    "UseCap": ["executor-gate"],
+    "ConsumeResource": ["executor-gate"],
+    "RiskClose": ["executor-gate"]
+  },
+  "version_intervals": {"*": {"minimum": 1, "maximum": 1}},
+  "commit_groups": {},
+  "protected_constructors": {
+    "GateCheck": ["executor-gate"],
+    "OutboxClaim": ["executor-gate"],
+    "UseCap": ["executor-gate"],
+    "ConsumeResource": ["executor-gate"],
+    "RiskClose": ["executor-gate"]
+  },
+  "gate_bundle_kinds": ["GateCheck", "OutboxClaim", "UseCap", "ConsumeResource", "RiskClose"],
+  "executor_writer": "executor-gate",
+  "clock_policy": "integer-commit-time",
+  "certificate_families": {"risk": ["agent"]},
+  "risk_modes": ["fixed", "selectedEvent", "conditionalSelective", "anytime"],
+  "env_assumptions": [],
+  "codebook": ["fixed", "selectedEvent", "conditionalSelective", "anytime"],
+  "allow_local_paths": false
+}

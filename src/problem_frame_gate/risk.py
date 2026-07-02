@@ -8,9 +8,11 @@ from fractions import Fraction
 from typing import Any
 
 from .certificates import CertificateFamily, check_certificate_live
+from .digest import is_sha256_digest
 from .fold import FoldState
 from .model import Horizon
 from .result import CheckBuilder, CheckResult
+from .signatures import SignatureRegistry
 
 RiskModeChecker = Callable[["RiskClaimRecord", FoldState, int, Horizon], CheckResult]
 
@@ -219,6 +221,8 @@ def check_risk_spend_live(
     ledger_digest: str | None = None,
     horizon: Horizon | None = None,
     certificate_registry: Mapping[str, CertificateFamily] | None = None,
+    signature_registry: SignatureRegistry | None = None,
+    require_certificate_signature: bool = False,
 ) -> CheckResult:
     """Before-use check for one risk spend."""
 
@@ -244,7 +248,15 @@ def check_risk_spend_live(
     if closed_at is not None and int(closed_at) <= at_time:
         builder.error("risk-spend-closed", "risk spend is already closed at use time", location=risk_id)
     return builder.result().merge(
-        check_certificate_live(state, cert_id, at_time, horizon=horizon, registry=certificate_registry)
+        check_certificate_live(
+            state,
+            cert_id,
+            at_time,
+            horizon=horizon,
+            registry=certificate_registry,
+            signature_registry=signature_registry,
+            require_signature=require_certificate_signature,
+        )
     )
 
 
@@ -257,6 +269,8 @@ def check_risk_claims(
     horizon: Horizon,
     registry: Mapping[str, RiskMode] | None = None,
     certificate_registry: Mapping[str, CertificateFamily] | None = None,
+    signature_registry: SignatureRegistry | None = None,
+    require_certificate_signature: bool = False,
 ) -> CheckResult:
     """Check finite installed risk claims and their union-bound spend."""
 
@@ -286,6 +300,8 @@ def check_risk_claims(
             ledger_digest=record.ledger_digest,
             horizon=horizon,
             certificate_registry=certificate_registry,
+            signature_registry=signature_registry,
+            require_certificate_signature=require_certificate_signature,
         )
         if not spend.ok:
             for issue in spend.issues:
@@ -349,6 +365,48 @@ def check_risk_claims(
     return builder.result()
 
 
+def standard_risk_registry() -> dict[str, RiskMode]:
+    """Return callable checkers for the four built-in finite risk routes."""
+
+    return {
+        "fixed": RiskMode("fixed", checker=_standard_risk_mode_checker, assumption=""),
+        "selectedEvent": RiskMode("selectedEvent", checker=_standard_risk_mode_checker, assumption=""),
+        "conditionalSelective": RiskMode("conditionalSelective", checker=_standard_risk_mode_checker, assumption=""),
+        "anytime": RiskMode("anytime", checker=_standard_risk_mode_checker, assumption=""),
+    }
+
+
+def _standard_risk_mode_checker(
+    record: RiskClaimRecord,
+    state: FoldState,
+    at_time: int,
+    horizon: Horizon,
+) -> CheckResult:
+    builder = CheckBuilder(footprint={"RiskModeRegistry", "RiskTranscript"})
+    if record.mode not in horizon.risk_modes:
+        builder.error("risk-mode-undeclared", "risk mode is not declared by the manifest", location=record.claim_id)
+    if record.route_witness is None or not record.route_witness.accepted:
+        builder.error("risk-route-check", "risk route must carry an accepted finite witness", location=record.claim_id)
+    if record.mode == "fixed" and not record.event_id:
+        builder.error("risk-fixed-event", "fixed mode requires a failure event", location=record.claim_id)
+    if record.mode in {"selectedEvent", "conditionalSelective"} and not record.selection_event_id:
+        builder.error(
+            "risk-selection-event",
+            "selected risk routes require a finite selection event",
+            location=record.claim_id,
+        )
+    if record.mode == "anytime" and not record.stopping_time_id:
+        builder.error("risk-stopping-time", "anytime mode requires a stopping-time witness", location=record.claim_id)
+    reserve = state.component("risk").get("reserves", {}).get(record.risk_id, {})
+    if record.selection_time is not None and int(reserve.get("reserved_at", at_time + 1)) >= record.selection_time:
+        builder.error(
+            "risk-post-selection-reserve",
+            "risk reserve must precede the selection or stopping decision",
+            location=record.claim_id,
+        )
+    return builder.result()
+
+
 def _check_route_witness(record: RiskClaimRecord, horizon: Horizon, builder: CheckBuilder) -> None:
     witness = record.route_witness
     if witness is None:
@@ -363,7 +421,7 @@ def _check_route_witness(record: RiskClaimRecord, horizon: Horizon, builder: Che
         builder.error("risk-route-check", "risk route witness was not accepted", location=record.claim_id)
     if not witness.checker:
         builder.error("risk-route-checker", "risk route witness must name its checker", location=record.claim_id)
-    if not _sha256_text(witness.transcript_digest):
+    if not is_sha256_digest(witness.transcript_digest):
         builder.error(
             "risk-route-transcript",
             "risk route witness must bind a SHA-256 transcript digest",
@@ -391,10 +449,6 @@ def _check_route_witness(record: RiskClaimRecord, horizon: Horizon, builder: Che
                 details={"assumption": witness.assumption},
             )
         builder.add_assumption(witness.assumption)
-
-
-def _sha256_text(value: Any) -> bool:
-    return isinstance(value, str) and value.startswith("sha256:") and len(value) > len("sha256:")
 
 
 def _parse_fraction(

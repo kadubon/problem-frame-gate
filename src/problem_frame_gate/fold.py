@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from copy import deepcopy
 from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any, Protocol
@@ -87,7 +86,7 @@ class FrameComponent:
         return {}
 
     def apply(self, state: dict[str, dict[str, Any]], envelope: Envelope) -> dict[str, dict[str, Any]]:
-        next_state = deepcopy(state)
+        next_state = _copy_records(state)
         kind = envelope.kind
         payload = envelope.payload
         frame_id = str(payload.get("frame_id", payload.get("object", "")))
@@ -134,7 +133,7 @@ class CertificateComponent:
         return {}
 
     def apply(self, state: dict[str, dict[str, Any]], envelope: Envelope) -> dict[str, dict[str, Any]]:
-        next_state = deepcopy(state)
+        next_state = _copy_records(state)
         payload = envelope.payload
         kind = envelope.kind
         if kind == "Issue":
@@ -154,6 +153,10 @@ class CertificateComponent:
                 "dependency_digest": payload.get("dependency_digest"),
                 "family_check": payload.get("family_check"),
                 "assumption": payload.get("assumption"),
+                "key_id": payload.get("key_id"),
+                "signature_algorithm": payload.get("signature_algorithm"),
+                "signed_payload_digest": payload.get("signed_payload_digest"),
+                "signature": payload.get("signature"),
                 "revoked_at": None,
                 "payload_eid": envelope.eid,
             }
@@ -176,7 +179,7 @@ class CapabilityComponent:
         return {}
 
     def apply(self, state: dict[str, dict[str, Any]], envelope: Envelope) -> dict[str, dict[str, Any]]:
-        next_state = deepcopy(state)
+        next_state = _copy_records(state)
         payload = envelope.payload
         kind = envelope.kind
         if kind in {"MintCap", "CapMinted"}:
@@ -223,7 +226,7 @@ class ResourceComponent:
         return {}
 
     def apply(self, state: dict[str, dict[str, Any]], envelope: Envelope) -> dict[str, dict[str, Any]]:
-        next_state = deepcopy(state)
+        next_state = _copy_records(state)
         payload = envelope.payload
         kind = envelope.kind
         if kind == "ReserveResource":
@@ -262,7 +265,7 @@ class OutboxComponent:
         return {}
 
     def apply(self, state: dict[str, dict[str, Any]], envelope: Envelope) -> dict[str, dict[str, Any]]:
-        next_state = deepcopy(state)
+        next_state = _copy_records(state)
         payload = envelope.payload
         kind = envelope.kind
         outbox_id = str(payload.get("outbox_id", payload.get("object", "")))
@@ -325,7 +328,7 @@ class RiskComponent:
         return {"hypotheses": {}, "reserves": {}, "spends": {}}
 
     def apply(self, state: dict[str, Any], envelope: Envelope) -> dict[str, Any]:
-        next_state = deepcopy(state)
+        next_state = _copy_risk_state(state)
         payload = envelope.payload
         kind = envelope.kind
         if kind == "RiskReg":
@@ -379,7 +382,7 @@ class EvidenceComponent:
         return {}
 
     def apply(self, state: dict[str, dict[str, Any]], envelope: Envelope) -> dict[str, dict[str, Any]]:
-        next_state = deepcopy(state)
+        next_state = _copy_records(state)
         payload = envelope.payload
         kind = envelope.kind
         if kind in {"Record", "Evidence", "Source"}:
@@ -423,3 +426,15 @@ def _get(state: dict[str, Any], key: str, label: str, envelope: Envelope) -> dic
 
 def _fraction_text(value: Any) -> str:
     return str(Fraction(str(value)))
+
+
+def _copy_records(state: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {key: dict(value) for key, value in state.items()}
+
+
+def _copy_risk_state(state: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "hypotheses": _copy_records(state.get("hypotheses", {})),
+        "reserves": _copy_records(state.get("reserves", {})),
+        "spends": _copy_records(state.get("spends", {})),
+    }

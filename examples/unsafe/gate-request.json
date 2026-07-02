@@ -1,0 +1,23 @@
+{
+  "gate_id": "g1",
+  "bundle_id": "b1",
+  "frame_id": "p1",
+  "action": "send-email",
+  "outbox_id": "out1",
+  "capability_id": "cap1",
+  "lease_id": "lease1",
+  "risk_id": "risk1",
+  "hypothesis_id": "h1",
+  "risk_mode": "fixed",
+  "risk_cert_id": "risk-cert",
+  "source_time": 1,
+  "commit_time": 2,
+  "executor_id": "executor",
+  "resource_amount": 1,
+  "ledger_digest": null,
+  "expected_source_digest": "sha256:not-a-real-digest",
+  "required_certificate_ids": ["risk-cert"],
+  "risk_claim": null,
+  "risk_alpha": "bad",
+  "metadata": {}
+}
