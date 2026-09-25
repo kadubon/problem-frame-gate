@@ -68,6 +68,26 @@ assumptions cannot be adopted as self-issued production approval.
 
 ## Python Example
 
+From the source checkout root with the package installed, this smaller example
+reads the same three synthetic fixtures and checks the gate in memory. It does
+not commit records or dispatch an actuator:
+
+```python
+import json
+from pathlib import Path
+
+from problem_frame_gate import Envelope, ExecutorGate, GateRequest, Horizon
+
+def load_fixture(name):
+    return json.loads(Path("docs/examples", name).read_text(encoding="utf-8"))
+
+horizon = Horizon.from_mapping(load_fixture("horizon.json"))
+log = tuple(Envelope.from_mapping(item) for item in load_fixture("log.json"))
+request = GateRequest.from_mapping(load_fixture("gate-request.json"))
+gate = ExecutorGate()
+print(gate.check(horizon, log, request).ok)
+```
+
 The [complete synthetic construction](docs/python-gate-example.md) shows the finite
 family-check and risk-route assumptions explicitly. For a production profile, use
 the [callable checker requirements](docs/quickstart.md), not caller-provided success flags.
