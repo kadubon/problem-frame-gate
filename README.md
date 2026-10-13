@@ -1,56 +1,55 @@
 # Problem Frame Gate
 
-Problem Frame Gate is a Python library and CLI for finite, proof-carrying audit
-checks around AI decision frames and external action gates.  It implements the
-audit-calculus concepts in:
+Before dispatch, does a declared action have the required finite frame, capability,
+resource and evidence records? Problem Frame Gate checks those bindings and prepares
+an atomic gate bundle. Committing that bundle and invoking an actuator are separate
+host-controlled steps. It implements the audit-calculus concepts in:
 
 Takahashi, K. (2026). *Problemogenesis Theory: A Finite Proof-Carrying Audit
 Calculus for Problem-Frame Activation*. Zenodo.
 https://doi.org/10.5281/zenodo.20913669
 
-The package is strict by default.  A log is not considered safe unless a finite
+The package is strict by default.  A log is not accepted under the strict audit rules unless a finite
 manifest declares writer authority, protected action constructors, capacities,
 certificate families, risk modes, and gate bundle policy.
 
 ## Install
 
-```bash
-uv sync --all-extras
-uv run pytest
+Current source and [PyPI package](https://pypi.org/project/problem-frame-gate/1.1.0/):
+**1.1.0**, Python 3.10+, Apache-2.0. In an isolated Python environment
+(POSIX shell or PowerShell):
+
+```sh
+python -m pip install problem-frame-gate==1.1.0
+pfg --help
 ```
 
-From PyPI:
-
-```bash
-pip install problem-frame-gate
-pfg init-manifest > horizon.json
-```
+Installation may use the network; local inspection does not call a model or dispatch
+an operation. Installation does not require running tests. Contributor checks are
+in [operations](docs/operations.md) and the [quickstart](docs/quickstart.md).
 
 ## Safe Quickstart
 
-Create a strict manifest:
+The wheel packages `problem_frame_gate`, not checkout-relative `docs/examples/`.
+For the commands below, use a source checkout and run from its root with the installed
+CLI, or prepare the same relative paths from the three complete fixtures:
+[horizon](docs/examples/horizon.json), [log](docs/examples/log.json), and
+[gate request](docs/examples/gate-request.json). These are synthetic assumption-bearing
+records, not production certificates. Changing an `accepted` flag does not establish evidence.
 
-```bash
-pfg init-manifest > horizon.json
-```
+This small path only reads those files and prints a fold/gate result (POSIX shell or
+PowerShell); it neither appends the bundle nor invokes an actuator:
 
-Validate and fold a log.  The repository contains complete copy-paste JSON
-fixtures in `docs/examples/`:
-
-```bash
-pfg validate-schema horizon docs/examples/horizon.json
-pfg validate-schema log docs/examples/log.json
-pfg verify-log --horizon docs/examples/horizon.json docs/examples/log.json
+```sh
 pfg fold --horizon docs/examples/horizon.json docs/examples/log.json
-```
-
-Check an action gate and emit the atomic bundle:
-
-```bash
-pfg validate-schema gate-request docs/examples/gate-request.json
 pfg check-gate --horizon docs/examples/horizon.json --bundle docs/examples/gate-request.json docs/examples/log.json
-pfg report --horizon docs/examples/horizon.json docs/examples/log.json
 ```
+
+Inspect `ok`, issues and the bound gate transcript. Commands are source-checked,
+not newly execution-verified. See [schema checks and full walkthrough](docs/quickstart.md).
+For a new project, `pfg init-manifest` prints a starter manifest; redirecting it with
+`> horizon.json` writes a file and must use a fresh destination. A starter manifest
+alone is not a complete action/evidence log.
 
 The generated bundle contains exactly five protected rows:
 
@@ -63,103 +62,45 @@ The generated bundle contains exactly five protected rows:
 Each row must be written by the executor writer and committed in one atomic
 group.  A standalone `OutboxClaim` is rejected.
 
-For a new project, copy the three JSON files from `docs/examples/`, then change
-the writer ids, certificate issuers, frame id, action name, risk id, and resource
-ids to match your deployment.
+For deployment, declare real writers, issuers, frames, resources and risk policy,
+then supply legitimate evidence or callable checkers. The synthetic family/risk
+assumptions cannot be adopted as self-issued production approval.
 
 ## Python Example
 
+From the source checkout root with the package installed, this smaller example
+reads the same three synthetic fixtures and checks the gate in memory. It does
+not commit records or dispatch an actuator:
+
 ```python
-from problem_frame_gate import (
-    Envelope,
-    EnvelopeClass,
-    ExecutorGate,
-    GateRequest,
-    Horizon,
-    RiskClaimRecord,
-    RiskRouteWitness,
-    digest_json,
-)
+import json
+from pathlib import Path
 
-horizon = Horizon.strict_default(agent_writers=("agent",))
+from problem_frame_gate import Envelope, ExecutorGate, GateRequest, Horizon
 
-def env(eid: str, commit: int, kind: str, **payload: object) -> Envelope:
-    return Envelope(eid, eid, "0", commit, "agent", "agent", 1, EnvelopeClass.NORMAL, {"kind": kind, **payload})
+def load_fixture(name):
+    return json.loads(Path("docs/examples", name).read_text(encoding="utf-8"))
 
-family_check = {
-    "accepted": True,
-    "checker": "example-certificate-family-v1",
-    "transcript_digest": digest_json({"checker": "example-certificate-family-v1", "accepted": True}),
-    "dependency_digest": digest_json({"dependencies": [], "source_ids": []}),
-    "revocation_frontier": [],
-    "checked_at": 2,
-    "assumption": "CertificateFamilyChecker",
-}
-
-log = [
-    env("e0", 0, "Frame", frame_id="p1", scope="lab", goal="test anomaly",
-        evidence_ids=["u1"], actions=["run-check"], acceptance=["review"], risk_ids=["r1"]),
-    env("e1", 1, "Evidence", evidence_id="u1", digest="sha256:source"),
-    env("e2", 2, "Issue", cert_id="c-risk", family="risk", issuer="agent",
-        expires_at=99, family_check=family_check),
-    env("e3", 3, "Activated", frame_id="p1"),
-    env("e4", 4, "RiskReg", hypothesis_id="h1", family="fixed"),
-    env("e5", 5, "RiskReserve", risk_id="r1", hypothesis_id="h1", frame_id="p1", eta="1/100"),
-    env("e6", 6, "RiskSpend", risk_id="r1", hypothesis_id="h1", frame_id="p1",
-        eta="1/100", mode="fixed", cert_id="c-risk"),
-    env("e7", 7, "ReserveResource", lease_id="lease1", token_id="tool", frame_id="p1"),
-    env("e8", 8, "MintCap", capability_id="cap1", frame_id="p1", action="run-check"),
-    env("e9", 9, "AuthorizeOutbox", outbox_id="out1", frame_id="p1", action="run-check"),
-]
-
-risk_claim = RiskClaimRecord(
-    claim_id="q1",
-    risk_id="r1",
-    hypothesis_id="h1",
-    mode="fixed",
-    cert_id="c-risk",
-    eta="1/100",
-    event_id="F1",
-    standardized_event_id="F1",
-    route_witness=RiskRouteWitness(
-        accepted=True,
-        checker="example-risk-route-v1",
-        transcript_digest=digest_json({"checker": "example-risk-route-v1", "mode": "fixed"}),
-        route="fixed",
-    ),
-)
-
-request = GateRequest(
-    gate_id="gate1", bundle_id="bundle1", frame_id="p1", action="run-check",
-    outbox_id="out1", capability_id="cap1", lease_id="lease1",
-    risk_id="r1", hypothesis_id="h1", risk_mode="fixed", risk_cert_id="c-risk",
-    source_time=9, commit_time=10, risk_claim=risk_claim.to_json(), risk_alpha="1/50",
-)
-
+horizon = Horizon.from_mapping(load_fixture("horizon.json"))
+log = tuple(Envelope.from_mapping(item) for item in load_fixture("log.json"))
+request = GateRequest.from_mapping(load_fixture("gate-request.json"))
 gate = ExecutorGate()
-assert gate.check(horizon, log, request).ok
-bundle = gate.create_bundle(horizon, log, request)
-assert bundle.verify(horizon, log).ok
+print(gate.check(horizon, log, request).ok)
 ```
+
+The [complete synthetic construction](docs/python-gate-example.md) shows the finite
+family-check and risk-route assumptions explicitly. For a production profile, use
+the [callable checker requirements](docs/quickstart.md), not caller-provided success flags.
 
 ## Durable Runtime Path
 
-Use the runtime helpers when an agent needs to commit a gate decision before any
-external tool call:
-
-```python
-from problem_frame_gate import GateCommitter, MemoryAppendOnlyStore, OutboxBroker
-
-store = MemoryAppendOnlyStore(log)
-commit = GateCommitter(store).commit_gate(horizon, request)
-assert commit.ok
-```
-
-`GateCommitter` only appends the accepted five-row gate bundle.  It never calls
-an actuator.  `OutboxBroker` is the separate component that dispatches only
-after a durable `OutboxClaim` and `DispatchStarted` row exist.  Production
-deployments can use `SQLiteAppendOnlyStore` or implement the `AppendOnlyStore`
-protocol with their own replicated storage.
+`GateCommitter` atomically appends the accepted five-row bundle to an
+`AppendOnlyStore`; it does not call an actuator. `MemoryAppendOnlyStore` is in-memory;
+`SQLiteAppendOnlyStore` provides the local durable option. `OutboxBroker` is a separate
+dispatcher and can invoke an actuator only after durable `OutboxClaim` and
+`DispatchStarted` records. See [operations](docs/operations.md) and the existing
+[SQLite example](examples/sqlite_gate_commit.py). Durable records do not guarantee
+exactly-once external effects.
 
 ## Security Boundary
 
@@ -173,7 +114,7 @@ Boolean certificate flags are treated as legacy assumptions and fail strict
 v1.1.0 checks.  Certificate issue rows can also carry signature fields; Python
 deployments may require and verify them with `SignatureRegistry`.
 
-There are two verification routes:
+Verification routes and production requirements:
 
 - JSON-only use relies on manifest-declared environment assumptions such as
   `CertificateFamilyChecker` and `StatisticalModel`.
@@ -184,8 +125,16 @@ There are two verification routes:
   rejects assumption-only statistical routes unless the deployment explicitly
   declares that boundary.
 
-See `docs/quickstart.md`, `docs/schema.md`, `docs/theory-mapping.md`, and
-`docs/issue-codes.md` for operational use.
+This finite audit-consistency boundary is not universal action safety, OAuth
+infrastructure or a sandbox. Hosts remain responsible for execution isolation and
+unresolved external outcomes.
+
+## Machine-readable interfaces
+
+Use the [schema contract](docs/schema.md), [JSON format](docs/json-format.md),
+[issue codes](docs/issue-codes.md), and [CLI source](src/problem_frame_gate/cli.py).
+The [positive fixtures](docs/examples/) and [deliberate unsafe fixtures](examples/unsafe/)
+show accepted and rejected finite inputs; fixture acceptance is not external truth.
 
 ## Release
 
@@ -193,3 +142,10 @@ The canonical repository is `https://github.com/kadubon/problem-frame-gate`.
 Versioned releases are published by GitHub Actions through PyPI Trusted
 Publishing from `.github/workflows/workflow.yml`; no long-lived PyPI token is
 required.
+
+## Research navigation
+
+Use the [Collective Intelligence Research and OSS Index](https://kadubon.github.io/github.io/collective-intelligence-index.html)
+for [authority boundaries](https://kadubon.github.io/github.io/collective-intelligence-index.html#problem-authority)
+and [retry/recovery](https://kadubon.github.io/github.io/collective-intelligence-index.html#problem-retry-recovery).
+These routes explain host obligations, not permission to dispatch.

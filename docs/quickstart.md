@@ -1,18 +1,23 @@
 # Quickstart
 
-Problem Frame Gate is strict by default.  Start with a manifest:
+Problem Frame Gate is strict by default. After installing in an isolated Python
+environment, create a starter manifest only in a fresh disposable directory.
+Installation may use the network; `>` writes `horizon.json` (POSIX shell or PowerShell):
 
 ```bash
 pip install problem-frame-gate
 pfg init-manifest > horizon.json
 ```
 
-For a working JSON-only example, use the complete files in `docs/examples/`:
+The wheel does not install `docs/examples/` into your working directory. For the
+following commands, work at a source checkout root with the CLI available, or download
+the three linked files and recreate that relative layout:
 
-- `docs/examples/horizon.json`
-- `docs/examples/log.json`
-- `docs/examples/gate-request.json`
+- [horizon.json](examples/horizon.json)
+- [log.json](examples/log.json)
+- [gate-request.json](examples/gate-request.json)
 
+The following commands read files and print results; they do not commit or dispatch.
 Validate the files and replay the log:
 
 ```bash
